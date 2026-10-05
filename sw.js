@@ -1,4 +1,4 @@
-const CACHE = 'expense-tracker-v3';
+const CACHE = 'expense-tracker-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  // sw.js intentionally NOT cached — browser must always fetch it fresh
 ];
 
 self.addEventListener('install', e => {

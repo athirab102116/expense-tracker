@@ -493,7 +493,7 @@ function renderBarChart(expenses, month) {
       labels: byDay.map((_, i) => i + 1),
       datasets: [{
         data: byDay,
-        backgroundColor: '#16a085cc',
+        backgroundColor: '#f472b6cc',
         borderRadius: 4,
         borderSkipped: false,
       }]
@@ -537,10 +537,10 @@ async function renderTrendChart(y, m) {
       labels,
       datasets: [{
         data,
-        borderColor: '#16a085',
-        backgroundColor: 'rgba(22,160,133,0.12)',
+        borderColor: '#f472b6',
+        backgroundColor: 'rgba(244,114,182,0.12)',
         borderWidth: 2,
-        pointBackgroundColor: '#16a085',
+        pointBackgroundColor: '#f472b6',
         pointRadius: 5,
         tension: 0.3,
         fill: true,

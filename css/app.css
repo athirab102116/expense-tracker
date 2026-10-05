@@ -1,23 +1,24 @@
-/* ── CSS Variables ── */
+/* ── Pookie Pastel Theme ── */
 :root {
-  --bg: #f2f2f7;
+  --bg: #fff0f6;
   --surface: #ffffff;
-  --surface2: #f2f2f7;
-  --surface3: #e5e5ea;
-  --text: #1c1c1e;
-  --text2: #3c3c43;
-  --text3: #8e8e93;
-  --accent: #16a085;
-  --accent-light: #1abc9c22;
-  --danger: #ff3b30;
-  --warning: #ff9500;
-  --success: #34c759;
-  --border: rgba(60,60,67,0.18);
-  --shadow: 0 2px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
-  --radius: 14px;
-  --radius-sm: 10px;
-  --nav-bg: rgba(242,242,247,0.85);
+  --surface2: #fce7f3;
+  --surface3: #fbcfe8;
+  --text: #4a1942;
+  --text2: #6b3a6b;
+  --text3: #c084a8;
+  --accent: #f472b6;
+  --accent-dark: #db2777;
+  --accent-light: #f472b630;
+  --danger: #f87171;
+  --warning: #fb923c;
+  --success: #86efac;
+  --border: rgba(244,114,182,0.2);
+  --shadow: 0 2px 16px rgba(244,114,182,0.12);
+  --shadow-lg: 0 8px 32px rgba(244,114,182,0.18);
+  --radius: 18px;
+  --radius-sm: 12px;
+  --nav-bg: rgba(255,240,246,0.88);
   --tab-height: 83px;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -26,18 +27,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #000000;
-    --surface: #1c1c1e;
-    --surface2: #2c2c2e;
-    --surface3: #3a3a3c;
-    --text: #ffffff;
-    --text2: #ebebf5;
-    --text3: #8d8d93;
-    --border: rgba(84,84,88,0.55);
-    --shadow: 0 2px 12px rgba(0,0,0,0.4);
+    --bg: #2d1127;
+    --surface: #3d1a35;
+    --surface2: #4d2244;
+    --surface3: #5e2a52;
+    --text: #fce7f3;
+    --text2: #f9a8d4;
+    --text3: #c084a8;
+    --border: rgba(244,114,182,0.25);
+    --shadow: 0 2px 16px rgba(0,0,0,0.4);
     --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
-    --nav-bg: rgba(28,28,30,0.85);
-    --accent-light: #16a08530;
+    --nav-bg: rgba(45,17,39,0.9);
+    --accent-light: #f472b635;
   }
 }
 
@@ -134,7 +135,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   justify-content: center;
   font-size: 24px;
   font-weight: 300;
-  box-shadow: 0 4px 16px rgba(22,160,133,0.4);
+  box-shadow: 0 4px 16px rgba(244,114,182,0.45);
   margin-top: -14px;
 }
 

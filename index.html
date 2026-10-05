@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <!-- PWA / iOS Safari -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Expenses">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#16a085" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)">
+
+  <title>Expense Tracker</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Icons -->
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <main id="main-content" role="main">
+      <!-- Views render here -->
+      <div class="empty-state" style="padding-top:80px">
+        <div style="font-size:48px;margin-bottom:16px">💰</div>
+        <div>Loading...</div>
+      </div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
+      <button class="nav-item active" data-view="dashboard" aria-label="Dashboard">
+        <span class="nav-icon">📊</span>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-view="transactions" aria-label="Transactions">
+        <span class="nav-icon">📋</span>
+        <span>History</span>
+      </button>
+      <button class="nav-item add-nav" data-view="add" aria-label="Add expense">
+        <span class="nav-icon">＋</span>
+        <span>Add</span>
+      </button>
+      <button class="nav-item" data-view="budgets" aria-label="Budgets">
+        <span class="nav-icon">🎯</span>
+        <span>Budgets</span>
+      </button>
+      <button class="nav-item" data-view="settings" aria-label="Settings">
+        <span class="nav-icon">⚙️</span>
+        <span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Chart.js (bundled locally) -->
+  <script src="lib/chart.umd.min.js"></script>
+  <!-- App -->
+  <script type="module" src="js/app.js"></script>
+
+  <!-- Service Worker registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(r => console.log('SW registered:', r.scope))
+          .catch(e => console.log('SW registration failed:', e));
+      });
+    }
+  </script>
+</body>
+</html>

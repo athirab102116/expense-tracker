@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Backups / exports (personal data — never commit)
+*.backup.json
+*.export.json
+expenses-*.json
+expenses-*.csv
+
+# Editor
+.vscode/
+*.swp
+*~
+
+# Node (if ever used for local dev server)
+node_modules/
+npm-debug.log*

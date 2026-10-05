@@ -688,3 +688,122 @@ button:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ── Nav brand (desktop only) ── */
+.nav-brand { display: none; }
+
+/* ── Clarify modal ── */
+.clarify-desc {
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.clarify-hint {
+  font-size: 13px;
+  color: var(--text3);
+  margin-bottom: 16px;
+}
+.clarify-skip { color: var(--text3); font-size: 13px; }
+
+/* ── Desktop Layout ── */
+@media (min-width: 768px) {
+  html, body { height: 100%; overflow: hidden; }
+
+  #app {
+    flex-direction: row;
+    max-width: 100%;
+    height: 100vh;
+  }
+
+  /* Sidebar nav */
+  .bottom-nav {
+    position: relative;
+    left: auto; bottom: auto;
+    transform: none;
+    width: 220px;
+    min-width: 220px;
+    height: 100vh;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    padding: 0 8px 24px;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    overflow-y: auto;
+    max-width: none;
+  }
+
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 28px 14px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .nav-brand-icon { font-size: 24px; }
+  .nav-brand-name { font-size: 17px; font-weight: 700; color: var(--text); }
+
+  .nav-item {
+    flex-direction: row;
+    justify-content: flex-start;
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    gap: 12px;
+    text-align: left;
+    margin-bottom: 2px;
+  }
+  .nav-item .nav-icon {
+    font-size: 20px;
+    width: 26px;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .nav-item.active {
+    background: var(--accent-light);
+  }
+  .nav-item.add-nav .nav-icon {
+    background: var(--accent);
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+    margin-top: 0;
+    box-shadow: none;
+  }
+  .nav-item.add-nav { color: var(--accent); }
+
+  /* Main content */
+  #main-content {
+    flex: 1;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px 40px 40px;
+  }
+
+  /* Dashboard 2-col grid */
+  .view-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    max-width: 860px;
+  }
+  .dash-header  { grid-column: 1 / -1; }
+  .total-card   { grid-column: 1 / -1; }
+
+  /* Constrain form views */
+  .view-add,
+  .view-transactions,
+  .view-budgets,
+  .view-settings { max-width: 620px; }
+
+  /* Toast from top-left on desktop */
+  .toast { left: 230px; transform: translateY(-80px); }
+  .toast.show { transform: translateY(0); }
+}

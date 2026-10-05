@@ -75,20 +75,31 @@ function closeAllModals() {
 }
 
 // ─── Merchant Auto-categorize ────────────────────────────────────────────────
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Returns { categoryId, confident }
 async function autoCategory(merchant) {
-  if (!merchant) return 'other';
+  if (!merchant) return { categoryId: 'other', confident: false };
   const lower = merchant.toLowerCase();
 
-  // Check user-learned rules first (from corrections)
+  // Permanently learned corrections
   const learned = await db.getSetting('learned_merchants', {});
-  if (learned[lower]) return learned[lower];
+  if (learned[lower]) return { categoryId: learned[lower], confident: true };
 
-  // Check merchant_rules store (editable rules)
+  // Editable keyword rules
   const rules = await db.getAll('merchant_rules');
   for (const rule of rules) {
-    if (lower.includes(rule.keyword.toLowerCase())) return rule.categoryId;
+    if (lower.includes(rule.keyword.toLowerCase()))
+      return { categoryId: rule.categoryId, confident: true };
   }
-  return 'other';
+
+  // Pending memory: if we've seen and labelled this merchant within 1 week
+  const pending = await db.getSetting('pending_merchants', {});
+  if (pending[lower] && pending[lower].categoryId && Date.now() - pending[lower].firstSeen <= WEEK_MS) {
+    return { categoryId: pending[lower].categoryId, confident: false };
+  }
+
+  return { categoryId: 'other', confident: false };
 }
 
 async function learnMerchant(merchant, categoryId) {
@@ -96,6 +107,83 @@ async function learnMerchant(merchant, categoryId) {
   const learned = await db.getSetting('learned_merchants', {});
   learned[merchant.toLowerCase()] = categoryId;
   await db.setSetting('learned_merchants', learned);
+}
+
+// Pending merchant memory: track uncertain merchants for 1 week
+async function recordPendingMerchant(merchant, categoryId) {
+  if (!merchant) return;
+  const lower = merchant.toLowerCase();
+  const pending = await db.getSetting('pending_merchants', {});
+  const now = Date.now();
+  const entry = pending[lower];
+
+  if (entry && now - entry.firstSeen <= WEEK_MS) {
+    entry.count = (entry.count || 1) + 1;
+    entry.lastSeen = now;
+    if (categoryId) entry.categoryId = categoryId;
+
+    if (entry.count >= 2 && entry.categoryId) {
+      // Seen twice in a week → save permanently
+      await db.add('merchant_rules', { keyword: lower, categoryId: entry.categoryId });
+      state.merchantRules = await db.getAll('merchant_rules');
+      delete pending[lower];
+      await db.setSetting('pending_merchants', pending);
+      showToast(`✨ Saved "${merchant}" → ${getCat(entry.categoryId).emoji} ${getCat(entry.categoryId).name} permanently`);
+      return;
+    }
+  } else {
+    // New sighting or expired — start fresh
+    pending[lower] = { categoryId, firstSeen: now, lastSeen: now, count: 1 };
+  }
+  await db.setSetting('pending_merchants', pending);
+}
+
+async function cleanupPendingMerchants() {
+  const pending = await db.getSetting('pending_merchants', {});
+  const now = Date.now();
+  let changed = false;
+  for (const key of Object.keys(pending)) {
+    if (now - pending[key].firstSeen > WEEK_MS) {
+      delete pending[key];
+      changed = true;
+    }
+  }
+  if (changed) await db.setSetting('pending_merchants', pending);
+}
+
+// Show clarification bottom sheet for an expense whose category is uncertain
+function showCategoryPrompt(expense) {
+  document.getElementById('clarify-merchant').textContent = expense.merchant || 'this expense';
+  document.getElementById('clarify-amount').textContent = fmt(expense.amount);
+
+  const grid = document.getElementById('clarify-cats');
+  grid.innerHTML = state.categories.map(cat => `
+    <div class="cat-pick" data-id="${cat.id}" data-expense-id="${expense.id}">
+      <div class="cat-pick-emoji">${cat.emoji}</div>
+      <div class="cat-pick-name">${cat.name}</div>
+    </div>
+  `).join('');
+
+  openModal('clarify-modal');
+
+  grid.querySelectorAll('.cat-pick').forEach(el => {
+    el.addEventListener('click', async () => {
+      const catId = el.dataset.id;
+      const expId = parseInt(el.dataset.expenseId);
+      // Update saved expense
+      const exp = await db.get('expenses', expId);
+      if (exp) { exp.category = catId; await db.put('expenses', exp); }
+      // Record for memory
+      await recordPendingMerchant(expense.merchant, catId);
+      closeModal('clarify-modal');
+      showToast(`Saved as ${getCat(catId).emoji} ${getCat(catId).name}`);
+      if (state.view === 'dashboard' || state.view === 'transactions') renderView();
+    });
+  });
+
+  document.getElementById('clarify-skip')?.addEventListener('click', () => {
+    closeModal('clarify-modal');
+  });
 }
 
 // ─── SMS Parsing ─────────────────────────────────────────────────────────────
@@ -195,11 +283,11 @@ async function handleURLParams() {
 
   const merchant = decodeURIComponent(p.get('merchant') || '');
   const method = p.get('method') || 'UPI';
-  const catId = await autoCategory(merchant);
+  const { categoryId, confident } = await autoCategory(merchant);
 
   const expense = {
     amount,
-    category: catId,
+    category: categoryId,
     merchant,
     note: p.get('note') || '',
     method,
@@ -208,8 +296,18 @@ async function handleURLParams() {
     createdAt: Date.now(),
   };
 
-  await db.add('expenses', expense);
-  showToast(`Saved ${fmt(amount)} (${getCat(catId).emoji} ${getCat(catId).name})`);
+  const newId = await db.add('expenses', expense);
+  expense.id = newId;
+
+  if (!confident && merchant) {
+    // Record as a pending merchant sighting with uncertain category
+    await recordPendingMerchant(merchant, categoryId === 'other' ? null : categoryId);
+    showToast(`Saved ${fmt(amount)} — tap to categorise 💕`);
+    // Show clarification prompt after a brief delay so toast is visible first
+    setTimeout(() => showCategoryPrompt(expense), 600);
+  } else {
+    showToast(`Saved ${fmt(amount)} (${getCat(categoryId).emoji} ${getCat(categoryId).name})`);
+  }
 
   // Clean URL
   history.replaceState({}, '', location.pathname);
@@ -667,7 +765,7 @@ function mountAddForm() {
     if (result.merchant) document.getElementById('f-merchant').value = result.merchant;
     // Auto-category
     if (result.merchant) {
-      const catId = await autoCategory(result.merchant);
+      const { categoryId: catId } = await autoCategory(result.merchant);
       selectedCat = catId;
       document.querySelectorAll('.cat-pick').forEach(el => {
         el.classList.toggle('selected', el.dataset.id === catId);
@@ -1216,6 +1314,7 @@ function downloadFile(content, filename, type) {
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
   await bootstrap();
+  await cleanupPendingMerchants();  // prune expired 1-week entries
   await handleURLParams();
 
   // Nav clicks

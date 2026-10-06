@@ -18,7 +18,9 @@ const state = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  // Use local date, not UTC — avoids wrong date for IST users (UTC+5:30)
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 function monthLabel(ym) {
@@ -266,10 +268,24 @@ async function loadDemoData() {
 }
 
 async function clearDemoData() {
-  await db.clearStore('expenses');
-  await db.clearStore('budgets');
+  // Only delete the known demo merchant names, not all user data
+  const DEMO_MERCHANTS = ['Swiggy','BigBasket','Uber','Amazon','Netflix','Zomato',
+    'Landlord','Apollo Pharmacy','Rapido','Udemy','Restaurant','Jio','DMart','Ola'];
+  const all = await db.getAll('expenses');
+  const demoIds = all
+    .filter(e => DEMO_MERCHANTS.includes(e.merchant))
+    .map(e => e.id);
+  for (const id of demoIds) await db.delete('expenses', id);
+
+  // Clear sample budgets
+  const budgets = await db.getAll('budgets');
+  const demoBudgets = budgets.filter(b =>
+    ['food','groceries','transport','entertainment'].includes(b.categoryId)
+  );
+  for (const b of demoBudgets) await db.delete('budgets', b.id);
+
   await db.setSetting('demo_loaded', false);
-  showToast('Data cleared');
+  showToast(`Removed ${demoIds.length} demo entries`);
   renderView();
 }
 
@@ -379,6 +395,7 @@ async function renderDashboard() {
   const diffLabel = prevTotal > 0
     ? `<span class="diff ${diff <= 0 ? 'green' : 'red'}">${diff <= 0 ? '▼' : '▲'} ${Math.abs(diffPct)}% vs last month</span>`
     : '';
+  const countLabel = `<span class="expense-count">${expenses.length} expense${expenses.length !== 1 ? 's' : ''}</span>`;
 
   const catRows = Object.entries(byCat)
     .sort((a, b) => b[1] - a[1])
@@ -417,6 +434,7 @@ async function renderDashboard() {
   <div class="total-card card">
     <div class="total-label">Total Spent</div>
     <div class="total-amount">${fmt(total)}</div>
+    ${countLabel}
     ${diffLabel}
   </div>
 
@@ -1378,10 +1396,26 @@ function downloadFile(content, filename, type) {
   URL.revokeObjectURL(url);
 }
 
+// ─── Persistent Storage Request ──────────────────────────────────────────────
+async function requestPersistentStorage() {
+  if (!navigator.storage?.persist) return;
+  const already = await navigator.storage.persisted();
+  if (already) return;
+  const granted = await navigator.storage.persist();
+  if (!granted) {
+    // iOS Safari denies until the user adds the app to Home Screen
+    const count = (await db.getAll('expenses')).length;
+    if (count > 0) {
+      showToast('⚠️ Add to Home Screen to keep data safe', 'error');
+    }
+  }
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
   await bootstrap();
-  await cleanupPendingMerchants();  // prune expired 1-week entries
+  await cleanupPendingMerchants();
+  await requestPersistentStorage();
   await handleURLParams();
 
   // Nav clicks

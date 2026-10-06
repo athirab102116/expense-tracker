@@ -250,6 +250,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 }
 .total-label { font-size: 13px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
 .total-amount { font-size: 40px; font-weight: 700; color: var(--text); margin: 4px 0 8px; letter-spacing: -1px; }
+.expense-count { font-size: 13px; color: var(--text3); display: block; margin-bottom: 4px; }
 .diff { font-size: 13px; font-weight: 500; }
 .diff.green { color: var(--success); }
 .diff.red { color: var(--danger); }

@@ -1118,10 +1118,42 @@ async function renderSettings() {
 
   <!-- Categories -->
   <div class="settings-section card">
-    <div class="settings-section-title">🏷️ Categories</div>
+    <div class="settings-section-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>🏷️ Categories</span>
+      <button class="btn-add-cat" id="add-cat-btn">＋ New</button>
+    </div>
     <div id="cat-list-edit">${catRows}</div>
-    <button class="btn-secondary" id="save-cats">Save Categories</button>
-    <button class="btn-link" id="add-cat-btn" style="margin-top:8px">+ Add Category</button>
+    <button class="btn-secondary" id="save-cats" style="margin-top:4px">Save Changes</button>
+  </div>
+
+  <!-- Add / Edit Category Modal -->
+  <div class="modal" id="new-cat-modal">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">✨ New Category</div>
+
+      <label class="field-label">Name</label>
+      <input type="text" id="nc-name" placeholder="e.g. Coffee, Petrol, Gifts…" class="field-input" autocomplete="off">
+
+      <label class="field-label">Emoji — tap one or type your own</label>
+      <div class="emoji-presets">
+        ${['☕','🧃','🍕','🍜','🥗','🛵','⛽','🏥','💇','🐾','👗','💄','🎁','🎉','🏋️','📖','🎸','✈️','🏠','💡','🧹','🐶','🌸','💅','🍰','🎀','🛍️','🪴','🏖️','🎬'].map(e =>
+          `<button type="button" class="emoji-preset-btn" data-emoji="${e}">${e}</button>`
+        ).join('')}
+      </div>
+      <input type="text" id="nc-emoji" placeholder="☕" class="field-input emoji-solo" maxlength="2">
+
+      <label class="field-label">Colour</label>
+      <div class="color-swatches">
+        ${['#FF6B6B','#FF8FAB','#FFB3D0','#F9A8D4','#E879F9','#A78BFA','#818CF8','#60A5FA','#34D399','#86EFAC','#FCD34D','#FB923C','#F87171','#94A3B8','#C084FC','#F472B6'].map(c =>
+          `<button type="button" class="color-swatch" data-color="${c}" style="background:${c}"></button>`
+        ).join('')}
+      </div>
+      <input type="hidden" id="nc-color" value="#F472B6">
+
+      <button type="button" class="btn-primary" id="nc-save">Add Category</button>
+      <button type="button" class="btn-secondary" id="nc-cancel">Cancel</button>
+    </div>
   </div>
 
   <!-- Merchant Rules -->
@@ -1259,14 +1291,49 @@ function mountSettings() {
     });
   });
 
-  // Add category
-  document.getElementById('add-cat-btn')?.addEventListener('click', async () => {
-    const name = prompt('Category name:');
-    if (!name) return;
-    const emoji = prompt('Emoji (1 character):') || '📌';
-    const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    await db.put('categories', { id, name, emoji, color: '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0') });
+  // Add category — open proper modal
+  document.getElementById('add-cat-btn')?.addEventListener('click', () => {
+    document.getElementById('nc-name').value = '';
+    document.getElementById('nc-emoji').value = '';
+    document.getElementById('nc-color').value = '#F472B6';
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('selected', s.dataset.color === '#F472B6'));
+    openModal('new-cat-modal');
+    setTimeout(() => document.getElementById('nc-name').focus(), 300);
+  });
+
+  // Emoji preset tap
+  document.querySelectorAll('.emoji-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('nc-emoji').value = btn.dataset.emoji;
+      document.querySelectorAll('.emoji-preset-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
+
+  // Colour swatch tap
+  document.querySelectorAll('.color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      document.getElementById('nc-color').value = sw.dataset.color;
+      document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+    });
+  });
+
+  document.getElementById('nc-cancel')?.addEventListener('click', () => closeModal('new-cat-modal'));
+  document.getElementById('new-cat-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal('new-cat-modal');
+  });
+
+  document.getElementById('nc-save')?.addEventListener('click', async () => {
+    const name = document.getElementById('nc-name').value.trim();
+    if (!name) return showToast('Enter a category name', 'error');
+    const emoji = document.getElementById('nc-emoji').value.trim() || '📌';
+    const color = document.getElementById('nc-color').value || '#F472B6';
+    const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now().toString(36);
+    await db.put('categories', { id, name, emoji, color });
     state.categories = await db.getAll('categories');
+    closeModal('new-cat-modal');
+    showToast(`${emoji} ${name} added!`);
     renderView();
   });
 

@@ -692,6 +692,68 @@ button:focus-visible, input:focus-visible {
 /* ── Nav brand (desktop only) ── */
 .nav-brand { display: none; }
 
+/* ── Add Category button ── */
+.btn-add-cat {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: none;
+}
+.btn-add-cat:active { opacity: 0.7; }
+
+/* ── Emoji preset grid ── */
+.emoji-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.emoji-preset-btn {
+  font-size: 22px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  transition: all 0.12s;
+}
+.emoji-preset-btn.selected,
+.emoji-preset-btn:active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.emoji-solo {
+  font-size: 28px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+/* ── Colour swatches ── */
+.color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.color-swatch.selected,
+.color-swatch:active {
+  transform: scale(1.2);
+  border-color: var(--text);
+}
+
 /* ── Clarify modal ── */
 .clarify-desc {
   font-size: 16px;

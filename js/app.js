@@ -191,6 +191,39 @@ function showCategoryPrompt(expense) {
 
 // ─── GitHub Gist Sync ────────────────────────────────────────────────────────
 let _syncTimer = null;
+const GIST_FILENAME = 'expense-tracker.json';
+const GIST_DESCRIPTION = 'Expense Tracker Sync';
+
+// Find an existing Gist by searching the user's gists list
+async function findExistingGist(token) {
+  try {
+    const res = await fetch('https://api.github.com/gists?per_page=50', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) return null;
+    const gists = await res.json();
+    const found = gists.find(g =>
+      g.description === GIST_DESCRIPTION && g.files[GIST_FILENAME]
+    );
+    return found?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+async function _resolveGistId(token) {
+  let gistId = await db.getSetting('github_gist_id', '');
+  if (!gistId) {
+    // No local Gist ID — search GitHub for an existing one
+    gistId = await findExistingGist(token);
+    if (gistId) await db.setSetting('github_gist_id', gistId);
+  }
+  return gistId;
+}
 
 async function gistSync() {
   const token = await db.getSetting('github_token', '');
@@ -212,7 +245,7 @@ async function gistSync() {
         expenses, categories, budgets, merchantRules, learnedMerchants, pendingMerchants,
       });
 
-      const gistId = await db.getSetting('github_gist_id', '');
+      const gistId = await _resolveGistId(token);
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -220,9 +253,9 @@ async function gistSync() {
         'X-GitHub-Api-Version': '2022-11-28',
       };
       const body = JSON.stringify({
-        description: 'Expense Tracker Sync',
+        description: GIST_DESCRIPTION,
         public: false,
-        files: { 'expense-tracker.json': { content: payload } },
+        files: { [GIST_FILENAME]: { content: payload } },
       });
 
       const url = gistId
@@ -250,8 +283,11 @@ async function gistSync() {
 
 async function loadFromGist() {
   const token = await db.getSetting('github_token', '');
-  const gistId = await db.getSetting('github_gist_id', '');
-  if (!token || !gistId) return;
+  if (!token) return;
+
+  // Resolve Gist ID — search GitHub if not cached locally
+  const gistId = await _resolveGistId(token);
+  if (!gistId) return;
 
   try {
     const res = await fetch(`https://api.github.com/gists/${gistId}`, {
@@ -264,7 +300,7 @@ async function loadFromGist() {
     if (!res.ok) return;
 
     const gist = await res.json();
-    const file = gist.files['expense-tracker.json'];
+    const file = gist.files[GIST_FILENAME];
     if (!file?.content) return;
 
     const data = JSON.parse(file.content);

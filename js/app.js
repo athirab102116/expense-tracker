@@ -473,6 +473,11 @@ async function renderDashboard() {
   const diff = total - prevTotal;
   const diffPct = prevTotal > 0 ? ((diff / prevTotal) * 100).toFixed(0) : '';
 
+  // Total planned budget for this month
+  const allBudgets = await db.getAll('budgets');
+  const monthBudgets = allBudgets.filter(b => b.month === month);
+  const totalBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
+
   // Category breakdown
   const byCat = {};
   for (const e of expenses) {
@@ -559,6 +564,19 @@ async function renderDashboard() {
     <div class="total-amount">${fmt(total)}</div>
     ${countLabel}
     ${diffLabel}
+    ${totalBudget > 0 ? `
+    <div class="budget-bar-wrap">
+      <div class="budget-bar-track">
+        <div class="budget-bar-fill ${total > totalBudget ? 'over' : total / totalBudget > 0.8 ? 'warn' : ''}"
+          style="width:${Math.min((total / totalBudget) * 100, 100).toFixed(1)}%"></div>
+      </div>
+      <div class="budget-bar-labels">
+        <span class="budget-bar-spent">${fmt(total)} of ${fmt(totalBudget)} budget</span>
+        <span class="budget-bar-left ${total > totalBudget ? 'red' : 'green'}">
+          ${total > totalBudget ? `${fmt(total - totalBudget)} over` : `${fmt(totalBudget - total)} left`}
+        </span>
+      </div>
+    </div>` : ''}
   </div>
 
   <div class="card chart-card">
@@ -1117,6 +1135,36 @@ async function renderBudgets() {
   const spentByCat = {};
   for (const e of expenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
 
+  const totalBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
+  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalRemaining = totalBudget - totalSpent;
+  const totalPct = totalBudget > 0 ? Math.min((totalSpent / totalBudget) * 100, 100) : 0;
+  const overallStatus = totalPct >= 100 ? 'over' : totalPct >= 80 ? 'warn' : 'ok';
+
+  const totalSummary = monthBudgets.length > 0 ? `
+  <div class="budget-total-card card">
+    <div class="budget-total-row">
+      <div class="budget-total-col">
+        <div class="budget-total-label">Total Budget</div>
+        <div class="budget-total-val">${fmt(totalBudget)}</div>
+      </div>
+      <div class="budget-total-divider"></div>
+      <div class="budget-total-col">
+        <div class="budget-total-label">Total Spent</div>
+        <div class="budget-total-val">${fmt(totalSpent)}</div>
+      </div>
+      <div class="budget-total-divider"></div>
+      <div class="budget-total-col">
+        <div class="budget-total-label">${totalRemaining < 0 ? 'Over by' : 'Remaining'}</div>
+        <div class="budget-total-val ${totalRemaining < 0 ? 'red' : 'green'}">${fmt(Math.abs(totalRemaining))}</div>
+      </div>
+    </div>
+    <div class="progress-bar-wrap" style="margin-top:10px">
+      <div class="progress-bar ${overallStatus}" style="width:${totalPct.toFixed(1)}%"></div>
+    </div>
+    <div style="text-align:center;margin-top:4px;font-size:12px;color:var(--text3)">${totalPct.toFixed(0)}% of budget used</div>
+  </div>` : '';
+
   const budgetRows = monthBudgets.length === 0
     ? '<div class="empty-state">No budgets set for this month.<br>Tap + to add one.</div>'
     : monthBudgets.map(b => {
@@ -1153,6 +1201,7 @@ async function renderBudgets() {
     <h2 class="view-title">Budgets — ${monthLabel(month)}</h2>
     <button class="btn-icon" id="add-budget">＋</button>
   </div>
+  ${totalSummary}
   <div id="budget-list">${budgetRows}</div>
 </div>
 

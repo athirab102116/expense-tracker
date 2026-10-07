@@ -630,6 +630,63 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .budget-left.warn { color: var(--warning); }
 .budget-left.over { color: var(--danger); }
 
+/* ── Budget total summary card ── */
+.budget-total-card { margin-bottom: 12px; }
+.budget-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.budget-total-col {
+  flex: 1;
+  text-align: center;
+}
+.budget-total-label {
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.budget-total-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.budget-total-val.green { color: #34d399; }
+.budget-total-val.red   { color: var(--danger); }
+.budget-total-divider {
+  width: 1px;
+  height: 36px;
+  background: var(--border);
+}
+
+/* ── Dashboard budget progress bar ── */
+.budget-bar-wrap { margin-top: 12px; }
+.budget-bar-track {
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.budget-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  background: var(--success);
+}
+.budget-bar-fill.warn { background: var(--warning); }
+.budget-bar-fill.over { background: var(--danger); }
+.budget-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.budget-bar-spent { color: var(--text3); }
+.budget-bar-labels .green { color: #34d399; }
+.budget-bar-labels .red   { color: var(--danger); }
+
 /* ── Settings ── */
 .view-settings { padding-top: 8px; }
 .settings-section { margin-bottom: 12px; }

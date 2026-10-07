@@ -65,27 +65,33 @@ class ExpenseDB {
   async add(store, data) {
     const db = await this.open();
     return new Promise((resolve, reject) => {
-      const req = db.transaction(store, 'readwrite').objectStore(store).add(data);
-      req.onsuccess = e => resolve(e.target.result);
-      req.onerror = e => reject(e.target.error);
+      const tx = db.transaction(store, 'readwrite');
+      const req = tx.objectStore(store).add(data);
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
   }
 
   async put(store, data) {
     const db = await this.open();
     return new Promise((resolve, reject) => {
-      const req = db.transaction(store, 'readwrite').objectStore(store).put(data);
-      req.onsuccess = e => resolve(e.target.result);
-      req.onerror = e => reject(e.target.error);
+      const tx = db.transaction(store, 'readwrite');
+      const req = tx.objectStore(store).put(data);
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
   }
 
   async delete(store, key) {
     const db = await this.open();
     return new Promise((resolve, reject) => {
-      const req = db.transaction(store, 'readwrite').objectStore(store).delete(key);
-      req.onsuccess = () => resolve();
-      req.onerror = e => reject(e.target.error);
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
   }
 

@@ -14,6 +14,7 @@ const state = {
   chart: null,
   trendChart: null,
   barChart: null,
+  storagePersisted: null,    // null=unknown, true=safe, false=at-risk
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -423,8 +424,24 @@ async function renderDashboard() {
       </div>`;
     }).join('');
 
+  let storageBannerMsg = null;
+  if (isRunningInSafariInsteadOfPWA()) {
+    storageBannerMsg = `<strong>You're in Safari, not the installed app.</strong>
+      Expenses you add here won't appear in your Home Screen app — they use separate storage. Open from your Home Screen icon instead.`;
+  } else if (state.storagePersisted === false) {
+    storageBannerMsg = `<strong>Your data may be deleted by the browser.</strong>
+      Add this app to your Home Screen to protect your expenses.`;
+  }
+  const storageBanner = storageBannerMsg ? `
+  <div class="storage-banner" id="storage-banner">
+    <span class="storage-banner-icon">⚠️</span>
+    <div class="storage-banner-text">${storageBannerMsg}</div>
+    <button class="storage-banner-dismiss" id="dismiss-storage-banner" aria-label="Dismiss">✕</button>
+  </div>` : '';
+
   return `
 <div class="view-dashboard">
+  ${storageBanner}
   <div class="dash-header">
     <button class="month-nav" id="prev-month">‹</button>
     <h2 class="month-label">${monthLabel(month)}</h2>
@@ -486,6 +503,11 @@ async function mountDashboard() {
   const month = state.currentMonth;
   const expenses = await db.getByIndex('expenses', 'month', month);
   const [y, m] = month.split('-').map(Number);
+
+  document.getElementById('dismiss-storage-banner')?.addEventListener('click', () => {
+    document.getElementById('storage-banner')?.remove();
+    state.storagePersisted = true; // suppress for this session
+  });
 
   document.getElementById('prev-month')?.addEventListener('click', () => {
     let nm = m - 1, ny = y;
@@ -1126,10 +1148,17 @@ async function renderSettings() {
   <!-- Export/Import -->
   <div class="settings-section card">
     <div class="settings-section-title">📂 Export / Import</div>
+    <div class="setting-row" style="margin-bottom:8px">
+      <span style="font-size:13px;color:var(--text-secondary)" id="last-backup-label">${
+        (await db.getSetting('last_backup'))
+          ? `Last backup: ${await db.getSetting('last_backup')}`
+          : 'No backup yet — back up regularly to protect against iOS data loss'
+      }</span>
+    </div>
     <div class="setting-row-stack">
       <button class="btn-secondary" id="export-csv">Export CSV</button>
-      <button class="btn-secondary" id="export-json">Export JSON</button>
-      <button class="btn-secondary" id="import-json">Import JSON</button>
+      <button class="btn-primary" id="export-json">Backup JSON</button>
+      <button class="btn-secondary" id="import-json">Restore from backup</button>
       <input type="file" id="import-file" accept=".json" class="hidden">
     </div>
   </div>
@@ -1248,7 +1277,10 @@ function mountSettings() {
     const budgets = await db.getAll('budgets');
     const payload = { version: 1, exportDate: today(), expenses, categories: cats, budgets };
     downloadFile(JSON.stringify(payload, null, 2), `expenses-${today()}.json`, 'application/json');
-    showToast('JSON exported!');
+    await db.setSetting('last_backup', today());
+    showToast('JSON exported! Save it to Files or iCloud.');
+    const lbl = document.getElementById('last-backup-label');
+    if (lbl) lbl.textContent = `Last backup: ${today()}`;
   });
 
   // Import JSON
@@ -1398,17 +1430,19 @@ function downloadFile(content, filename, type) {
 
 // ─── Persistent Storage Request ──────────────────────────────────────────────
 async function requestPersistentStorage() {
-  if (!navigator.storage?.persist) return;
+  if (!navigator.storage?.persist) { state.storagePersisted = false; return; }
   const already = await navigator.storage.persisted();
-  if (already) return;
+  if (already) { state.storagePersisted = true; return; }
   const granted = await navigator.storage.persist();
-  if (!granted) {
-    // iOS Safari denies until the user adds the app to Home Screen
-    const count = (await db.getAll('expenses')).length;
-    if (count > 0) {
-      showToast('⚠️ Add to Home Screen to keep data safe', 'error');
-    }
-  }
+  state.storagePersisted = granted;
+}
+
+// Returns true when running in Safari browser while a standalone PWA install exists.
+// On iOS, window.navigator.standalone is true only inside the installed PWA.
+function isRunningInSafariInsteadOfPWA() {
+  // navigator.standalone is iOS-only: undefined in other browsers
+  if (typeof window.navigator.standalone === 'undefined') return false;
+  return window.navigator.standalone === false;
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────

@@ -189,6 +189,112 @@ function showCategoryPrompt(expense) {
   });
 }
 
+// ─── GitHub Gist Sync ────────────────────────────────────────────────────────
+let _syncTimer = null;
+
+async function gistSync() {
+  const token = await db.getSetting('github_token', '');
+  if (!token) return;
+
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(async () => {
+    const el = document.getElementById('gist-sync-status');
+    try {
+      const [expenses, categories, budgets, merchantRules] = await Promise.all([
+        db.getAll('expenses'), db.getAll('categories'),
+        db.getAll('budgets'), db.getAll('merchant_rules'),
+      ]);
+      const learnedMerchants = await db.getSetting('learned_merchants', {});
+      const pendingMerchants = await db.getSetting('pending_merchants', {});
+
+      const payload = JSON.stringify({
+        version: 2, syncedAt: Date.now(),
+        expenses, categories, budgets, merchantRules, learnedMerchants, pendingMerchants,
+      });
+
+      const gistId = await db.getSetting('github_gist_id', '');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      };
+      const body = JSON.stringify({
+        description: 'Expense Tracker Sync',
+        public: false,
+        files: { 'expense-tracker.json': { content: payload } },
+      });
+
+      const url = gistId
+        ? `https://api.github.com/gists/${gistId}`
+        : 'https://api.github.com/gists';
+      const res = await fetch(url, { method: gistId ? 'PATCH' : 'POST', headers, body });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (!gistId) await db.setSetting('github_gist_id', data.id);
+
+      const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      await db.setSetting('last_gist_sync', t);
+      if (el) el.textContent = `☁️ Synced at ${t}`;
+
+    } catch (err) {
+      console.warn('Gist sync failed:', err.message);
+      if (el) el.textContent = `⚠️ Sync failed: ${err.message}`;
+    }
+  }, 1200);
+}
+
+async function loadFromGist() {
+  const token = await db.getSetting('github_token', '');
+  const gistId = await db.getSetting('github_gist_id', '');
+  if (!token || !gistId) return;
+
+  try {
+    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) return;
+
+    const gist = await res.json();
+    const file = gist.files['expense-tracker.json'];
+    if (!file?.content) return;
+
+    const data = JSON.parse(file.content);
+    if (!Array.isArray(data.expenses)) return;
+
+    // Gist is the source of truth — replace local data if Gist has content
+    if (data.expenses.length > 0) {
+      await db.clearStore('expenses');
+      for (const e of data.expenses) await db.add('expenses', e);
+    }
+    if (data.categories?.length) {
+      await db.clearStore('categories');
+      for (const c of data.categories) await db.put('categories', c);
+    }
+    if (data.budgets?.length) {
+      await db.clearStore('budgets');
+      for (const b of data.budgets) await db.put('budgets', b);
+    }
+    if (data.merchantRules?.length) {
+      await db.clearStore('merchant_rules');
+      for (const r of data.merchantRules) await db.add('merchant_rules', r);
+    }
+    if (data.learnedMerchants) await db.setSetting('learned_merchants', data.learnedMerchants);
+    if (data.pendingMerchants) await db.setSetting('pending_merchants', data.pendingMerchants);
+
+  } catch (err) {
+    console.warn('Gist load failed:', err.message);
+  }
+}
+
 // ─── SMS Parsing ─────────────────────────────────────────────────────────────
 function parseSMS(text) {
   // Try each pattern
@@ -821,6 +927,7 @@ function mountAddForm() {
     if (!state.editingExpense?.id) return;
     if (confirm('Delete this expense?')) {
       await db.delete('expenses', state.editingExpense.id);
+      gistSync();
       state.editingExpense = null;
       showToast('Deleted', 'success');
       setView('transactions');
@@ -855,14 +962,15 @@ function mountAddForm() {
     if (state.editingExpense?.id) {
       expense.id = state.editingExpense.id;
       await db.put('expenses', expense);
-      // Learn merchant -> category mapping
       if (merchant) await learnMerchant(merchant, selectedCat);
+      gistSync();
       state.editingExpense = null;
       showToast('Updated!');
       setView('transactions');
     } else {
       await db.add('expenses', expense);
       if (merchant) await learnMerchant(merchant, selectedCat);
+      gistSync();
       showToast('Expense added!');
       // Reset form
       document.getElementById('f-amount').value = '';
@@ -991,6 +1099,7 @@ function mountTransactions() {
       const id = parseInt(btn.dataset.id);
       if (confirm('Delete this expense?')) {
         await db.delete('expenses', id);
+        gistSync();
         showToast('Deleted');
         renderView();
       }
@@ -1107,6 +1216,9 @@ function mountBudgets() {
 // ─── Settings ─────────────────────────────────────────────────────────────────
 async function renderSettings() {
   const demoLoaded = await db.getSetting('demo_loaded', false);
+  const githubToken = await db.getSetting('github_token', '');
+  const gistId = await db.getSetting('github_gist_id', '');
+  const lastGistSync = await db.getSetting('last_gist_sync', '');
   const catRows = state.categories.map(c => `
     <div class="setting-row cat-row-edit" data-id="${c.id}">
       <span class="cat-emoji-lg">${c.emoji}</span>
@@ -1142,6 +1254,30 @@ async function renderSettings() {
           ? '<button class="btn-secondary-sm" id="clear-demo">Clear Demo</button>'
           : '<button class="btn-secondary-sm" id="load-demo">Load Demo</button>'}
       </div>
+    </div>
+  </div>
+
+  <!-- GitHub Gist Sync -->
+  <div class="settings-section card">
+    <div class="settings-section-title">☁️ Sync (Safari ↔ Home Screen)</div>
+    <p class="hint-text" style="margin-bottom:10px">Keeps your expenses in sync between Safari and the installed app. Every expense you add is saved to a private GitHub Gist automatically.</p>
+    <label class="field-label">GitHub Token <span style="font-weight:400;color:var(--text3)">(gist scope)</span></label>
+    <input type="password" id="github-token-input" class="field-input" placeholder="ghp_xxxxxxxxxxxx"
+      value="${githubToken}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+    <p class="hint-text" style="margin-top:6px">
+      <a href="https://github.com/settings/tokens/new?scopes=gist&description=Expense+Tracker+Sync" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">👉 Create a token here</a> — tick <strong>gist</strong> → Generate → copy &amp; paste above
+    </p>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-primary" id="save-gist-token" style="flex:1">${githubToken ? 'Update &amp; Sync' : 'Save &amp; Sync Now'}</button>
+      ${gistId ? `<button class="btn-secondary" id="gist-pull-now" style="flex:1">↓ Pull Latest</button>` : ''}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <span id="gist-sync-status" class="hint-text" style="font-size:12px">${
+        lastGistSync ? `☁️ Last sync: ${lastGistSync}` :
+        gistId ? '✅ Configured — auto-syncs on every expense' :
+        'Not set up yet'
+      }</span>
+      ${gistId ? `<button class="btn-link danger" id="gist-disconnect" style="font-size:12px">Disconnect</button>` : ''}
     </div>
   </div>
 
@@ -1255,6 +1391,37 @@ async function renderSettings() {
 }
 
 function mountSettings() {
+  // GitHub Gist sync
+  document.getElementById('save-gist-token')?.addEventListener('click', async () => {
+    const token = document.getElementById('github-token-input').value.trim();
+    if (!token) return showToast('Paste your GitHub token first', 'error');
+    await db.setSetting('github_token', token);
+    const el = document.getElementById('gist-sync-status');
+    if (el) el.textContent = '⏳ Syncing…';
+    await gistSync();
+    // Refresh settings to show Gist ID
+    setTimeout(() => renderView(), 1500);
+  });
+
+  document.getElementById('gist-pull-now')?.addEventListener('click', async () => {
+    const el = document.getElementById('gist-sync-status');
+    if (el) el.textContent = '⏳ Loading from GitHub…';
+    await loadFromGist();
+    state.categories = await db.getAll('categories');
+    state.merchantRules = await db.getAll('merchant_rules');
+    showToast('✅ Data loaded from GitHub!');
+    renderView();
+  });
+
+  document.getElementById('gist-disconnect')?.addEventListener('click', async () => {
+    if (!confirm('Disconnect GitHub sync? Your local data stays, but it will no longer sync.')) return;
+    await db.setSetting('github_token', '');
+    await db.setSetting('github_gist_id', '');
+    await db.setSetting('last_gist_sync', '');
+    showToast('Disconnected');
+    renderView();
+  });
+
   // Demo data
   document.getElementById('load-demo')?.addEventListener('click', loadDemoData);
   document.getElementById('clear-demo')?.addEventListener('click', clearDemoData);
@@ -1450,6 +1617,10 @@ async function init() {
   await bootstrap();
   await cleanupPendingMerchants();
   await requestPersistentStorage();
+  await loadFromGist();
+  // Re-read state in case Gist replaced categories/rules
+  state.categories = await db.getAll('categories');
+  state.merchantRules = await db.getAll('merchant_rules');
   await handleURLParams();
 
   // Nav clicks

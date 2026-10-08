@@ -353,32 +353,38 @@ async function loadFromGist() {
 
 // ─── SMS Parsing ─────────────────────────────────────────────────────────────
 // ─── Gmail HDFC Integration ───────────────────────────────────────────────────
-async function handleGmailOAuthCallback() {
-  const hash = window.location.hash;
-  if (!hash.includes('access_token=')) return;
-  const params = new URLSearchParams(hash.slice(1));
-  const token = params.get('access_token');
-  const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
-  if (token) {
-    await db.setSetting('gmail_token', token);
-    await db.setSetting('gmail_token_expiry', Date.now() + expiresIn * 1000);
-    window.history.replaceState({}, '', window.location.pathname);
-    showToast('Gmail connected!', 'success');
-  }
+const GMAIL_CLIENT_ID = '512722575041-daini48eq5hogm3441c6h8tf82nscov6.apps.googleusercontent.com';
+let _gisTokenClient = null;
+
+async function loadGIS() {
+  if (window.google?.accounts?.oauth2) return;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.googleapis.com/gsi/client';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+function initGISClient(callback) {
+  _gisTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GMAIL_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/gmail.readonly',
+    callback,
+  });
+  return _gisTokenClient;
 }
 
 async function gmailConnectClick() {
-  let clientId = await db.getSetting('gmail_client_id', '');
-  if (!clientId) {
-    const id = prompt('Enter your Google OAuth 2.0 Client ID:\n\n(Create one at console.cloud.google.com → APIs & Services → Credentials → Create OAuth Client ID → Web application. Add this page\'s URL as an authorized redirect URI.)');
-    if (!id) return;
-    await db.setSetting('gmail_client_id', id.trim());
-    clientId = id.trim();
-  }
-  const redirectUri = window.location.origin + window.location.pathname;
-  const scope = 'https://www.googleapis.com/auth/gmail.readonly';
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=select_account`;
-  window.location.href = url;
+  await loadGIS();
+  initGISClient(async response => {
+    if (response.error) { showToast('Gmail auth failed: ' + response.error, 'error'); return; }
+    await db.setSetting('gmail_token', response.access_token);
+    await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
+    showToast('Gmail connected!', 'success');
+    renderView();
+  });
+  _gisTokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 async function getGmailToken() {
@@ -491,11 +497,19 @@ function showGmailPreview(transactions, importedRefs) {
 }
 
 async function gmailSyncClick() {
-  const token = await getGmailToken();
+  let token = await getGmailToken();
   if (!token) {
-    showToast('Gmail session expired — please reconnect', 'error');
-    await db.setSetting('gmail_token', null);
-    renderView();
+    // Token expired — refresh silently via GIS
+    await loadGIS();
+    if (!_gisTokenClient) {
+      initGISClient(async response => {
+        if (response.error) { showToast('Please reconnect Gmail', 'error'); renderView(); return; }
+        await db.setSetting('gmail_token', response.access_token);
+        await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
+        gmailSyncClick();
+      });
+    }
+    _gisTokenClient.requestAccessToken({ prompt: '' });
     return;
   }
 
@@ -2508,7 +2522,6 @@ function isRunningInSafariInsteadOfPWA() {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
-  await handleGmailOAuthCallback();
   await bootstrap();
   await cleanupPendingMerchants();
   await requestPersistentStorage();

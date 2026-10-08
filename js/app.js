@@ -15,6 +15,8 @@ const state = {
   trendChart: null,
   barChart: null,
   storagePersisted: null,    // null=unknown, true=safe, false=at-risk
+  sortCol: 'date',
+  sortDir: 'desc',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -75,6 +77,20 @@ function closeModal(id) {
 function closeAllModals() {
   document.querySelectorAll('.modal.open').forEach(m => m.classList.remove('open'));
   document.body.style.overflow = '';
+}
+
+// ─── Add Expense Modal ────────────────────────────────────────────────────────
+function openAddModal(editData = null) {
+  state.editingExpense = editData || null;
+  document.getElementById('add-modal-body').innerHTML = renderAddForm(editData);
+  openModal('add-modal');
+  mountAddForm(true);
+  setTimeout(() => document.getElementById('add-modal')?.querySelector('.amount-input')?.focus(), 80);
+}
+
+function closeAddModal() {
+  closeModal('add-modal');
+  state.editingExpense = null;
 }
 
 // ─── Merchant Auto-categorize ────────────────────────────────────────────────
@@ -548,6 +564,16 @@ async function renderDashboard() {
     trend.push({ ym, sum, label: new Date(yy, mm - 1, 1).toLocaleString('default', { month: 'short' }) });
   }
 
+  // Stats bar computations
+  const todayStr = today();
+  const isCurrentMonth = month === todayStr.slice(0, 7);
+  const daysElapsed = isCurrentMonth ? parseInt(todayStr.slice(8), 10) : daysInMonth(month);
+  const avgDaily = daysElapsed > 0 ? (total / daysElapsed) : 0;
+  const topCatEntry = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
+  const topCat = topCatEntry ? getCat(topCatEntry[0]) : null;
+  const budgetRemaining = totalBudget > 0 ? totalBudget - total : null;
+  const last5 = [...expenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 5);
+
   const diffLabel = prevTotal > 0
     ? `<span class="diff ${diff <= 0 ? 'green' : 'red'}">${diff <= 0 ? '▼' : '▲'} ${Math.abs(diffPct)}% vs last month</span>`
     : '';
@@ -594,6 +620,20 @@ async function renderDashboard() {
     <button class="storage-banner-dismiss" id="dismiss-storage-banner" aria-label="Dismiss">✕</button>
   </div>` : '';
 
+  const recentItemsHTML = last5.length === 0
+    ? '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">💸</div><div class="empty-title">No transactions yet</div></div>'
+    : last5.map(e => {
+        const cat = getCat(e.category);
+        return `<div class="recent-item" data-id="${e.id}">
+          <div class="exp-icon" style="background:${cat.color}22;color:${cat.color}">${cat.emoji}</div>
+          <div class="exp-info">
+            <div class="exp-title">${e.merchant || cat.name}</div>
+            <div class="exp-sub">${cat.name} <span class="method-pill method-${(e.method||'').toLowerCase()}">${e.method||''}</span></div>
+          </div>
+          <div class="exp-amt">${fmt(e.amount)}</div>
+        </div>`;
+      }).join('');
+
   return `
 <div class="view-dashboard">
   ${storageBanner}
@@ -603,57 +643,71 @@ async function renderDashboard() {
     <button class="month-nav" id="next-month">›</button>
   </div>
 
-  <div class="total-card card">
-    <div class="total-label">Total Spent</div>
-    <div class="total-amount">${fmt(total)}</div>
-    ${countLabel}
-    ${diffLabel}
-    ${totalBudget > 0 ? `
-    <div class="budget-bar-wrap">
-      <div class="budget-bar-track">
-        <div class="budget-bar-fill ${total > totalBudget ? 'over' : total / totalBudget > 0.8 ? 'warn' : ''}"
-          style="width:${Math.min((total / totalBudget) * 100, 100).toFixed(1)}%"></div>
-      </div>
-      <div class="budget-bar-labels">
-        <span class="budget-bar-spent">${fmt(total)} of ${fmt(totalBudget)} budget</span>
-        <span class="budget-bar-left ${total > totalBudget ? 'red' : 'green'}">
-          ${total > totalBudget ? `${fmt(total - totalBudget)} over` : `${fmt(totalBudget - total)} left`}
-        </span>
-      </div>
-    </div>` : ''}
-  </div>
-
-  <div class="card chart-card">
-    <div class="chart-header">
-      <span class="chart-title">Where it went</span>
-      <div class="toggle-btns">
-        <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🥧 Chart</button>
-        <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🖼️ Picture</button>
-      </div>
+  <div class="stats-bar">
+    <div class="stat-tile">
+      <div class="stat-label">Total This Month</div>
+      <div class="stat-value">${fmt(total)}</div>
+      ${diffLabel ? `<div class="stat-sub">${diffLabel}</div>` : `<div class="stat-sub">${countLabel}</div>`}
     </div>
-    <div id="pie-view" class="${state.pictureMode ? 'hidden' : ''}">
-      ${total > 0
-        ? `<div class="chart-wrap"><canvas id="pieChart"></canvas></div>
-           <div class="cat-list">${catRows}</div>`
-        : '<div class="empty-state">No expenses this month</div>'
-      }
+    <div class="stat-tile">
+      <div class="stat-label">Avg Daily Spend</div>
+      <div class="stat-value">${fmt(Math.round(avgDaily))}</div>
+      <div class="stat-sub">${daysElapsed} day${daysElapsed !== 1 ? 's' : ''} tracked</div>
     </div>
-    <div id="picture-view" class="${state.pictureMode ? '' : 'hidden'}">
-      ${total > 0
-        ? `<div class="picture-grid">${pictureTiles}</div>`
-        : '<div class="empty-state">No expenses this month</div>'
-      }
+    <div class="stat-tile">
+      <div class="stat-label">Top Category</div>
+      <div class="stat-value">${topCat ? topCat.emoji + ' ' + topCat.name : '—'}</div>
+      <div class="stat-sub">${topCatEntry ? fmt(topCatEntry[1]) : 'No expenses yet'}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Budget Left</div>
+      <div class="stat-value ${budgetRemaining === null ? '' : budgetRemaining < 0 ? 'stat-over' : 'stat-ok'}">${budgetRemaining === null ? '—' : fmt(Math.abs(budgetRemaining))}</div>
+      <div class="stat-sub">${budgetRemaining === null ? 'No budget set' : budgetRemaining < 0 ? 'over budget' : 'remaining'}</div>
     </div>
   </div>
 
-  <div class="card chart-card">
-    <div class="chart-title">Daily spending</div>
-    <div class="chart-wrap-bar"><canvas id="barChart"></canvas></div>
-  </div>
+  <div class="dash-main">
+    <div class="dash-left">
+      <div class="card chart-card">
+        <div class="chart-header">
+          <span class="chart-title">Where it went</span>
+          <div class="toggle-btns">
+            <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🥧 Chart</button>
+            <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🖼️ Picture</button>
+          </div>
+        </div>
+        <div id="pie-view" class="${state.pictureMode ? 'hidden' : ''}">
+          ${total > 0
+            ? `<div class="chart-wrap"><canvas id="pieChart"></canvas></div><div class="cat-list">${catRows}</div>`
+            : '<div class="empty-state"><div class="empty-icon">🌸</div><div class="empty-title">No expenses yet</div><div class="empty-sub">Press N or tap + to add one</div></div>'
+          }
+        </div>
+        <div id="picture-view" class="${state.pictureMode ? '' : 'hidden'}">
+          ${total > 0 ? `<div class="picture-grid">${pictureTiles}</div>` : '<div class="empty-state">No expenses this month</div>'}
+        </div>
+      </div>
 
-  <div class="card chart-card chart-card-wide">
-    <div class="chart-title">Budget vs Actual</div>
-    <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
+      <div class="card chart-card">
+        <div class="chart-title">Daily Spending</div>
+        <div class="chart-wrap-bar"><canvas id="barChart"></canvas></div>
+      </div>
+
+      <div class="card chart-card chart-card-wide">
+        <div class="chart-title">Budget vs Actual</div>
+        <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="dash-right">
+      <div class="card recent-card">
+        <div class="recent-header">
+          <span class="chart-title">Recent Transactions</span>
+          <button class="btn-link" id="view-all-txn">View all →</button>
+        </div>
+        ${recentItemsHTML}
+        ${last5.length > 0 ? `<div style="margin-top:12px;text-align:center"><button class="btn-link" id="view-all-txn-2">View all transactions →</button></div>` : ''}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -737,6 +791,17 @@ async function mountDashboard() {
 
   document.getElementById('cat-modal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal('cat-modal');
+  });
+
+  document.getElementById('view-all-txn')?.addEventListener('click', () => setView('transactions'));
+  document.getElementById('view-all-txn-2')?.addEventListener('click', () => setView('transactions'));
+
+  document.querySelectorAll('.recent-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = parseInt(el.dataset.id);
+      const expense = await db.get('expenses', id);
+      if (expense) openAddModal(expense);
+    });
   });
 
   // Charts
@@ -936,7 +1001,7 @@ function renderAddForm(editData = null) {
 `;
 }
 
-function mountAddForm() {
+function mountAddForm(modalMode = false) {
   let selectedCat = state.editingExpense?.category || 'food';
   let selectedMethod = state.editingExpense?.method || 'UPI';
 
@@ -995,13 +1060,13 @@ function mountAddForm() {
       gistSync();
       state.editingExpense = null;
       showToast('Deleted', 'success');
-      setView('transactions');
+      if (modalMode) { closeAddModal(); renderView(); } else { setView('transactions'); }
     }
   });
 
   document.getElementById('cancel-edit')?.addEventListener('click', () => {
     state.editingExpense = null;
-    setView('transactions');
+    if (modalMode) { closeAddModal(); } else { setView('transactions'); }
   });
 
   // Form submit
@@ -1031,22 +1096,27 @@ function mountAddForm() {
       gistSync();
       state.editingExpense = null;
       showToast('Updated!');
-      setView('transactions');
+      if (modalMode) { closeAddModal(); renderView(); } else { setView('transactions'); }
     } else {
       await db.add('expenses', expense);
       if (merchant) await learnMerchant(merchant, selectedCat);
       gistSync();
       showToast('Expense added!');
-      // Reset form
-      document.getElementById('f-amount').value = '';
-      document.getElementById('f-merchant').value = '';
-      document.getElementById('f-note').value = '';
-      document.getElementById('f-date').value = today();
-      selectedCat = 'food';
-      selectedMethod = 'UPI';
-      document.querySelectorAll('.cat-pick').forEach(el => el.classList.toggle('selected', el.dataset.id === 'food'));
-      document.querySelectorAll('.method-btn').forEach(el => el.classList.toggle('active', el.dataset.method === 'UPI'));
-      document.getElementById('f-amount').focus();
+      if (modalMode) {
+        closeAddModal();
+        renderView();
+      } else {
+        // Reset form
+        document.getElementById('f-amount').value = '';
+        document.getElementById('f-merchant').value = '';
+        document.getElementById('f-note').value = '';
+        document.getElementById('f-date').value = today();
+        selectedCat = 'food';
+        selectedMethod = 'UPI';
+        document.querySelectorAll('.cat-pick').forEach(el => el.classList.toggle('selected', el.dataset.id === 'food'));
+        document.querySelectorAll('.method-btn').forEach(el => el.classList.toggle('active', el.dataset.method === 'UPI'));
+        document.getElementById('f-amount').focus();
+      }
     }
   });
 
@@ -1069,9 +1139,19 @@ async function renderTransactions() {
     );
   }
 
-  expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  expenses.sort((a, b) => {
+    let av, bv;
+    if (state.sortCol === 'date')          { av = a.date; bv = b.date; }
+    else if (state.sortCol === 'merchant') { av = (a.merchant||'').toLowerCase(); bv = (b.merchant||'').toLowerCase(); }
+    else if (state.sortCol === 'category') { av = getCat(a.category).name; bv = getCat(b.category).name; }
+    else if (state.sortCol === 'amount')   { av = a.amount; bv = b.amount; }
+    else if (state.sortCol === 'method')   { av = a.method||''; bv = b.method||''; }
+    else                                   { av = a.date; bv = b.date; }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return state.sortDir === 'asc' ? cmp : -cmp;
+  });
 
-  // Group by date
+  // Group by date (card list, mobile)
   const groups = {};
   for (const e of expenses) {
     (groups[e.date] = groups[e.date] || []).push(e);
@@ -1113,6 +1193,28 @@ async function renderTransactions() {
         `;
       }).join('');
 
+  const tableColLabels = {date:'Date',merchant:'Merchant',category:'Category',amount:'Amount',method:'Method'};
+  const tableHeaderCols = ['date','merchant','category','amount','method'].map(col => {
+    const active = state.sortCol === col;
+    const arrow = active ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕';
+    return `<th class="txn-th ${active ? 'txn-th-active' : ''}" data-sort="${col}">${tableColLabels[col]}<span class="sort-arrow">${arrow}</span></th>`;
+  }).join('') + '<th class="txn-th"></th>';
+
+  const tableRows = expenses.length === 0
+    ? `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">No transactions found</td></tr>`
+    : expenses.map(e => {
+        const cat = getCat(e.category);
+        const d = new Date(e.date + 'T00:00:00').toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'});
+        return `<tr class="txn-row" data-id="${e.id}">
+          <td class="txn-td txn-date">${d}</td>
+          <td class="txn-td txn-merchant"><span class="txn-merchant-name">${e.merchant || cat.name}</span>${e.note ? `<span class="txn-note">${e.note}</span>` : ''}</td>
+          <td class="txn-td"><span class="cat-chip" style="background:${cat.color}22;color:${cat.color}">${cat.emoji} ${cat.name}</span></td>
+          <td class="txn-td txn-amount">${fmt(e.amount)}</td>
+          <td class="txn-td"><span class="method-pill method-${(e.method||'').toLowerCase()}">${e.method||''}</span></td>
+          <td class="txn-td txn-actions"><button class="txn-delete-btn" data-id="${e.id}" title="Delete">🗑</button></td>
+        </tr>`;
+      }).join('');
+
   return `
 <div class="view-transactions">
   <div class="view-header" style="margin-bottom:10px">
@@ -1129,6 +1231,12 @@ async function renderTransactions() {
     </select>
   </div>
   <div id="exp-list">${groupsHTML}</div>
+  <div class="txn-table-wrap" id="txn-table-wrap">
+    <table class="txn-table">
+      <thead><tr>${tableHeaderCols}</tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  </div>
 </div>
 
 <div class="modal" id="export-modal">
@@ -1281,21 +1389,56 @@ function mountTransactions() {
     await exportPDF();
   });
 
-  // Tap to edit
+  // Tap to edit (card list, mobile)
   document.querySelectorAll('.exp-item').forEach(el => {
     el.addEventListener('click', async e => {
       if (e.target.classList.contains('delete-btn')) return;
       const id = parseInt(el.dataset.id);
       const expense = await db.get('expenses', id);
-      if (expense) {
-        state.editingExpense = expense;
-        setView('add');
+      if (expense) openAddModal(expense);
+    });
+  });
+
+  // Delete button (card list)
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.id);
+      if (confirm('Delete this expense?')) {
+        await db.delete('expenses', id);
+        gistSync();
+        showToast('Deleted');
+        renderView();
       }
     });
   });
 
-  // Delete button
-  document.querySelectorAll('.delete-btn').forEach(btn => {
+  // Table: sort column headers
+  document.querySelectorAll('.txn-th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if (state.sortCol === col) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortCol = col;
+        state.sortDir = col === 'amount' ? 'desc' : 'asc';
+      }
+      renderView();
+    });
+  });
+
+  // Table: row click to edit
+  document.querySelectorAll('.txn-row').forEach(row => {
+    row.addEventListener('click', async e => {
+      if (e.target.closest('.txn-delete-btn')) return;
+      const id = parseInt(row.dataset.id);
+      const expense = await db.get('expenses', id);
+      if (expense) openAddModal(expense);
+    });
+  });
+
+  // Table: delete button
+  document.querySelectorAll('.txn-delete-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       const id = parseInt(btn.dataset.id);
@@ -1893,9 +2036,24 @@ async function init() {
   // Nav clicks
   document.querySelectorAll('.nav-item').forEach(el => {
     el.addEventListener('click', () => {
-      if (el.dataset.view === 'add') state.editingExpense = null;
-      setView(el.dataset.view);
+      const v = el.dataset.view;
+      if (v === 'add') { openAddModal(); return; }
+      setView(v);
     });
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    const tag = document.activeElement?.tagName;
+    const inInput = ['INPUT','TEXTAREA','SELECT'].includes(tag);
+    const addModalOpen = document.getElementById('add-modal')?.classList.contains('open');
+    if ((e.key === 'n' || e.key === 'N') && !inInput && !e.ctrlKey && !e.metaKey && !addModalOpen) {
+      e.preventDefault();
+      openAddModal();
+    }
+    if (e.key === 'Escape' && addModalOpen) {
+      closeAddModal();
+    }
   });
 
   // Close modals on back gesture (popstate)

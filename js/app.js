@@ -643,7 +643,7 @@ async function renderDashboard() {
     <div class="chart-wrap-bar"><canvas id="barChart"></canvas></div>
   </div>
 
-  <div class="card chart-card">
+  <div class="card chart-card chart-card-wide">
     <div class="chart-title">Budget vs Actual</div>
     <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
   </div>

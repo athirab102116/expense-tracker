@@ -1226,7 +1226,7 @@ async function renderBudgets() {
               <span class="budget-left ${status}">
                 ${pct >= 100 ? `Over by ${fmt(spent - b.amount)}` : `${fmt(b.amount - spent)} left`}
               </span>
-              <button class="btn-link" data-budget-edit="${b.id}">Edit</button>
+              <button class="btn-link" data-budget-edit="${b.id}" data-budget-cat="${b.categoryId}" data-budget-amount="${b.amount}">Edit</button>
             </div>
           </div>
         `;
@@ -1278,17 +1278,14 @@ function mountBudgets() {
   });
 
   document.querySelectorAll('[data-budget-edit]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const bid = btn.dataset.budgetEdit;
-      const budget = await db.get('budgets', bid);
-      if (!budget) return;
-      document.getElementById('b-id').value = budget.id;
-      document.getElementById('b-cat-id').value = budget.categoryId;
-      document.getElementById('b-cat').value = budget.categoryId;
-      document.getElementById('b-amount').value = budget.amount;
+    btn.addEventListener('click', () => {
+      document.getElementById('b-id').value = btn.dataset.budgetEdit;
+      document.getElementById('b-cat-id').value = btn.dataset.budgetCat;
+      document.getElementById('b-cat').value = btn.dataset.budgetCat;
+      document.getElementById('b-amount').value = btn.dataset.budgetAmount;
       document.getElementById('budget-modal-title').textContent = 'Edit Budget';
-      document.getElementById('delete-budget').style.display = '';
-      document.getElementById('delete-budget-cat').style.display = '';
+      document.getElementById('delete-budget').style.display = 'block';
+      document.getElementById('delete-budget-cat').style.display = 'block';
       openModal('budget-modal');
     });
   });

@@ -376,15 +376,19 @@ function initGISClient(callback) {
 }
 
 async function gmailConnectClick() {
-  await loadGIS();
-  initGISClient(async response => {
-    if (response.error) { showToast('Gmail auth failed: ' + response.error, 'error'); return; }
-    await db.setSetting('gmail_token', response.access_token);
-    await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
-    showToast('Gmail connected!', 'success');
-    renderView();
-  });
-  _gisTokenClient.requestAccessToken({ prompt: 'select_account' });
+  try {
+    if (!window.google?.accounts?.oauth2) await loadGIS();
+    initGISClient(async response => {
+      if (response.error) { showToast('Gmail auth failed: ' + response.error, 'error'); return; }
+      await db.setSetting('gmail_token', response.access_token);
+      await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
+      showToast('Gmail connected!', 'success');
+      renderView();
+    });
+    _gisTokenClient.requestAccessToken({ prompt: 'select_account' });
+  } catch (err) {
+    showToast('Could not load Gmail auth: ' + err.message, 'error');
+  }
 }
 
 async function getGmailToken() {
@@ -2522,6 +2526,7 @@ function isRunningInSafariInsteadOfPWA() {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
+  loadGIS().catch(() => {}); // preload GIS so popup fires synchronously on click
   await bootstrap();
   await cleanupPendingMerchants();
   await requestPersistentStorage();

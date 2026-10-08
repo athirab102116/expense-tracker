@@ -1219,9 +1219,14 @@ async function renderTransactions() {
 <div class="view-transactions">
   <div class="view-header" style="margin-bottom:10px">
     <h2 class="view-title" style="margin-bottom:0">Transactions</h2>
-    <button class="export-btn" id="open-export" title="Export">
-      <span>📤</span><span class="export-btn-label">Export</span>
-    </button>
+    <div class="view-header-actions">
+      <button class="btn-secondary import-btn" id="open-import-btn" title="Import from Excel/CSV">
+        <span>📥</span><span class="import-btn-label">Import</span>
+      </button>
+      <button class="export-btn" id="open-export" title="Export">
+        <span>📤</span><span class="export-btn-label">Export</span>
+      </button>
+    </div>
   </div>
   <div class="filter-bar">
     <input type="search" id="search-input" placeholder="🔍 Search..." value="${state.searchQuery}" class="search-input">
@@ -1375,6 +1380,7 @@ function mountTransactions() {
     renderView();
   });
 
+  document.getElementById('open-import-btn')?.addEventListener('click', () => openImportModal());
   document.getElementById('open-export')?.addEventListener('click', () => openModal('export-modal'));
   document.getElementById('cancel-export')?.addEventListener('click', () => closeModal('export-modal'));
   document.getElementById('export-modal')?.addEventListener('click', e => {
@@ -1992,6 +1998,285 @@ function mountSettings() {
       renderView();
     });
   });
+}
+
+// ─── Excel / CSV Import ──────────────────────────────────────────────────────
+
+async function loadXLSX() {
+  if (window.XLSX) return window.XLSX;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => reject(new Error('Failed to load SheetJS'));
+    document.head.appendChild(s);
+  });
+}
+
+function parseDateValue(val) {
+  if (!val) return today();
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`;
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`;
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const d = new Date(Math.round((parseFloat(s) - 25569) * 86400 * 1000));
+    if (!isNaN(d)) return d.toISOString().slice(0, 10);
+  }
+  return today();
+}
+
+function autoMapColumns(headers) {
+  const dateKw    = ['date','transaction date','txn date','value date','posting date','trans date'];
+  const amountKw  = ['amount','debit','dr','withdrawal','transaction amount','txn amount','spent','price','total'];
+  const merchantKw= ['description','merchant','narration','particulars','payee','details','remark','remarks','note','notes','vendor'];
+  const categoryKw= ['category','type','label'];
+  const methodKw  = ['mode','method','payment mode','payment method','channel'];
+
+  const find = (kws) => {
+    for (let i = 0; i < headers.length; i++) {
+      const h = String(headers[i]).toLowerCase().trim();
+      if (kws.includes(h)) return i;
+    }
+    // partial match fallback
+    for (let i = 0; i < headers.length; i++) {
+      const h = String(headers[i]).toLowerCase().trim();
+      if (kws.some(k => h.includes(k) || k.includes(h))) return i;
+    }
+    return -1;
+  };
+
+  return {
+    dateCol:     find(dateKw),
+    amountCol:   find(amountKw),
+    merchantCol: find(merchantKw),
+    categoryCol: find(categoryKw),
+    methodCol:   find(methodKw),
+  };
+}
+
+function autoCategoriseImport(merchantName, categories) {
+  const lower = (merchantName || '').toLowerCase();
+  const catKeywords = {
+    food:          ['food','restaurant','cafe','swiggy','zomato','domino','pizza','burger','kfc','mcdonald','starbucks','coffee','eat','dining','lunch','dinner','breakfast','biryani','hotel'],
+    transport:     ['ola','uber','auto','taxi','metro','bus','train','rapido','petrol','fuel','gas','cab','travel','flight','irctc'],
+    shopping:      ['amazon','flipkart','myntra','ajio','nykaa','shop','store','mart','mall','cloth','fashion','zara'],
+    entertainment: ['netflix','spotify','prime','hotstar','movie','cinema','pvr','inox','game','youtube'],
+    health:        ['pharmacy','medical','hospital','clinic','doctor','medicine','health','apollo','diagnostic','lab'],
+    utilities:     ['electricity','water','internet','broadband','jio','airtel','vi','bsnl','recharge','bill','utility'],
+    grocery:       ['grofer','bigbasket','dmart','grocery','supermarket','blinkit','zepto','instamart','vegetable','fruit'],
+  };
+  for (const [catId, keywords] of Object.entries(catKeywords)) {
+    if (keywords.some(k => lower.includes(k))) {
+      const match = categories.find(c => c.id === catId || c.name.toLowerCase().includes(catId));
+      if (match) return match.id;
+    }
+  }
+  return categories[0]?.id || 'other';
+}
+
+async function openImportModal() {
+  const categories = await db.getAll('categories');
+  document.getElementById('import-modal-body').innerHTML = `
+    <div class="import-wrap">
+      <h2 class="modal-title">📥 Import Expenses</h2>
+      <p class="import-hint">Upload an Excel (.xlsx) or CSV file. The app will auto-detect columns and categorise each row.</p>
+      <div class="import-drop-zone" id="import-drop-zone">
+        <div class="import-drop-icon">📂</div>
+        <div class="import-drop-label">Drop file here or <label class="import-file-label" for="import-file-input">browse</label></div>
+        <input type="file" id="import-file-input" accept=".xlsx,.xls,.csv" style="display:none">
+        <div class="import-drop-sub">Supports .xlsx, .xls, .csv</div>
+      </div>
+      <div id="import-status" style="display:none;text-align:center;padding:16px;color:var(--text3)">Parsing file…</div>
+      <div id="import-preview-wrap" style="display:none"></div>
+    </div>`;
+
+  openModal('import-modal');
+
+  // File input
+  document.getElementById('import-file-input').addEventListener('change', e => {
+    if (e.target.files[0]) handleImportFile(e.target.files[0], categories);
+  });
+
+  // Drag-and-drop
+  const dz = document.getElementById('import-drop-zone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0], categories);
+  });
+  dz.addEventListener('click', () => document.getElementById('import-file-input').click());
+}
+
+async function handleImportFile(file, categories) {
+  const statusEl = document.getElementById('import-status');
+  const previewWrap = document.getElementById('import-preview-wrap');
+  const dropZone = document.getElementById('import-drop-zone');
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Loading parser…';
+
+  try {
+    const XLSX = await loadXLSX();
+    statusEl.textContent = 'Parsing file…';
+
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    if (rows.length < 2) {
+      statusEl.textContent = '⚠️ File appears to be empty or has only one row.';
+      return;
+    }
+
+    // Find header row: first row with >= 2 non-empty cells
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      const nonEmpty = rows[i].filter(c => String(c).trim() !== '').length;
+      if (nonEmpty >= 2) { headerIdx = i; break; }
+    }
+    const headers = rows[headerIdx];
+    const map = autoMapColumns(headers);
+
+    // Parse data rows
+    const parsedRows = [];
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const row = rows[i];
+      const rawAmount = map.amountCol >= 0 ? row[map.amountCol] : '';
+      const amount = Math.abs(parseFloat(String(rawAmount).replace(/[^\d.-]/g, '')) || 0);
+      if (!amount || isNaN(amount)) continue;
+
+      const merchant = map.merchantCol >= 0 ? String(row[map.merchantCol] || '').trim() : '';
+      const rawDate = map.dateCol >= 0 ? row[map.dateCol] : '';
+      const date = parseDateValue(rawDate);
+      const method = map.methodCol >= 0 ? String(row[map.methodCol] || '').trim() : 'Other';
+      const catGuess = map.categoryCol >= 0 && String(row[map.categoryCol] || '').trim()
+        ? (categories.find(c => c.name.toLowerCase() === String(row[map.categoryCol]).toLowerCase())?.id || autoCategoriseImport(merchant, categories))
+        : autoCategoriseImport(merchant, categories);
+
+      parsedRows.push({ date, merchant, amount, category: catGuess, method: method || 'Other' });
+    }
+
+    if (parsedRows.length === 0) {
+      statusEl.textContent = '⚠️ No valid expense rows found. Make sure the file has a Date and Amount column.';
+      return;
+    }
+
+    statusEl.style.display = 'none';
+    dropZone.style.display = 'none';
+
+    const catOptions = categories.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
+    const methodOptions = ['UPI','Card','Cash','NetBanking','Other'].map(m => `<option>${m}</option>`).join('');
+
+    previewWrap.style.display = 'block';
+    previewWrap.innerHTML = `
+      <div class="import-preview">
+        <div class="import-preview-header">
+          <span class="import-count">Found <strong>${parsedRows.length}</strong> transactions</span>
+          <div class="import-actions">
+            <button class="btn-secondary" id="import-cancel-btn">Cancel</button>
+            <button class="btn-primary" id="import-confirm-btn">Import ${parsedRows.length} expenses →</button>
+          </div>
+        </div>
+        <div class="import-table-wrap">
+          <table class="txn-table import-table">
+            <thead>
+              <tr>
+                <th class="txn-th">Date</th>
+                <th class="txn-th">Merchant</th>
+                <th class="txn-th">Amount (₹)</th>
+                <th class="txn-th">Category</th>
+                <th class="txn-th">Method</th>
+                <th class="txn-th" title="Check to skip this row">Skip</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${parsedRows.map((r, i) => `
+                <tr class="import-row txn-row" data-i="${i}">
+                  <td class="txn-td"><input class="import-cell-input" data-field="date" data-i="${i}" value="${r.date}"></td>
+                  <td class="txn-td"><input class="import-cell-input" data-field="merchant" data-i="${i}" value="${r.merchant}"></td>
+                  <td class="txn-td"><input class="import-cell-input import-amount" data-field="amount" data-i="${i}" value="${r.amount}" type="number" min="0" step="0.01"></td>
+                  <td class="txn-td">
+                    <select class="import-cell-select" data-field="category" data-i="${i}">
+                      ${categories.map(c => `<option value="${c.id}" ${c.id === r.category ? 'selected' : ''}>${c.emoji} ${c.name}</option>`).join('')}
+                    </select>
+                  </td>
+                  <td class="txn-td">
+                    <select class="import-cell-select" data-field="method" data-i="${i}">
+                      ${['UPI','Card','Cash','NetBanking','Other'].map(m => `<option value="${m}" ${m === r.method ? 'selected' : ''}>${m}</option>`).join('')}
+                    </select>
+                  </td>
+                  <td class="txn-td" style="text-align:center">
+                    <input type="checkbox" class="import-skip" data-i="${i}">
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    // Wire skip checkboxes
+    previewWrap.querySelectorAll('.import-skip').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const row = previewWrap.querySelector(`.import-row[data-i="${cb.dataset.i}"]`);
+        if (row) row.classList.toggle('skipped', cb.checked);
+      });
+    });
+
+    document.getElementById('import-cancel-btn').addEventListener('click', () => {
+      closeModal('import-modal');
+    });
+
+    document.getElementById('import-confirm-btn').addEventListener('click', () => {
+      importConfirmed(parsedRows, previewWrap);
+    });
+
+  } catch (err) {
+    statusEl.textContent = `⚠️ Error: ${err.message}`;
+  }
+}
+
+async function importConfirmed(parsedRows, previewWrap) {
+  const rows = previewWrap.querySelectorAll('.import-row');
+  let count = 0;
+  for (const row of rows) {
+    const skipCb = row.querySelector('.import-skip');
+    if (skipCb?.checked) continue;
+
+    const i = parseInt(row.dataset.i);
+    const dateVal  = row.querySelector('[data-field="date"]')?.value || parsedRows[i].date;
+    const merchant = row.querySelector('[data-field="merchant"]')?.value.trim() || parsedRows[i].merchant;
+    const amount   = parseFloat(row.querySelector('[data-field="amount"]')?.value) || parsedRows[i].amount;
+    const category = row.querySelector('[data-field="category"]')?.value || parsedRows[i].category;
+    const method   = row.querySelector('[data-field="method"]')?.value || parsedRows[i].method;
+
+    if (!amount || isNaN(amount)) continue;
+
+    const date = parseDateValue(dateVal);
+    await db.add('expenses', {
+      date,
+      month: date.slice(0, 7),
+      merchant,
+      amount,
+      category,
+      method,
+      note: '',
+      createdAt: Date.now(),
+    });
+    count++;
+  }
+
+  gistSync();
+  closeModal('import-modal');
+  renderView();
+  showToast(`✨ Imported ${count} expense${count !== 1 ? 's' : ''}`);
 }
 
 // ─── File Download Helper ─────────────────────────────────────────────────────

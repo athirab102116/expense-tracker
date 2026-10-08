@@ -1258,6 +1258,7 @@ async function renderBudgets() {
       <input type="number" id="b-amount" inputmode="decimal" placeholder="0" class="field-input" required min="1" step="1">
       <button type="submit" class="btn-primary">Save Budget</button>
       <button type="button" class="btn-secondary" id="cancel-budget">Cancel</button>
+      <button type="button" class="btn-secondary danger" id="delete-budget" style="display:none">Delete Budget</button>
     </form>
   </div>
 </div>
@@ -1269,6 +1270,7 @@ function mountBudgets() {
     document.getElementById('b-id').value = '';
     document.getElementById('b-amount').value = '';
     document.getElementById('budget-modal-title').textContent = 'Set Budget';
+    document.getElementById('delete-budget').style.display = 'none';
     openModal('budget-modal');
   });
 
@@ -1281,8 +1283,19 @@ function mountBudgets() {
       document.getElementById('b-cat').value = budget.categoryId;
       document.getElementById('b-amount').value = budget.amount;
       document.getElementById('budget-modal-title').textContent = 'Edit Budget';
+      document.getElementById('delete-budget').style.display = '';
       openModal('budget-modal');
     });
+  });
+
+  document.getElementById('delete-budget')?.addEventListener('click', async () => {
+    const bid = document.getElementById('b-id').value;
+    if (!bid) return;
+    await db.delete('budgets', bid);
+    closeModal('budget-modal');
+    showToast('Budget deleted');
+    gistSync();
+    renderView();
   });
 
   document.getElementById('cancel-budget')?.addEventListener('click', () => closeModal('budget-modal'));

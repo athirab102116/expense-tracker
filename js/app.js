@@ -1107,7 +1107,12 @@ async function renderTransactions() {
 
   return `
 <div class="view-transactions">
-  <h2 class="view-title">Transactions</h2>
+  <div class="view-header" style="margin-bottom:10px">
+    <h2 class="view-title" style="margin-bottom:0">Transactions</h2>
+    <button class="export-btn" id="open-export" title="Export">
+      <span>📤</span><span class="export-btn-label">Export</span>
+    </button>
+  </div>
   <div class="filter-bar">
     <input type="search" id="search-input" placeholder="🔍 Search..." value="${state.searchQuery}" class="search-input">
     <select id="cat-filter" class="cat-filter-select">
@@ -1117,7 +1122,125 @@ async function renderTransactions() {
   </div>
   <div id="exp-list">${groupsHTML}</div>
 </div>
+
+<div class="modal" id="export-modal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Export Transactions</div>
+    <p class="hint-text">Exports all transactions (not just the current filter).</p>
+    <button class="export-option-btn" id="export-csv">
+      <span class="export-opt-icon">📊</span>
+      <div class="export-opt-text">
+        <div class="export-opt-title">Spreadsheet (CSV)</div>
+        <div class="export-opt-sub">Opens in Excel, Numbers, Google Sheets</div>
+      </div>
+    </button>
+    <button class="export-option-btn" id="export-pdf">
+      <span class="export-opt-icon">📄</span>
+      <div class="export-opt-text">
+        <div class="export-opt-title">PDF / Print</div>
+        <div class="export-opt-sub">Save as PDF or print a summary</div>
+      </div>
+    </button>
+    <button class="btn-secondary" id="cancel-export" style="margin-top:8px">Cancel</button>
+  </div>
+</div>
 `;
+}
+
+async function exportCSV() {
+  const expenses = await db.getAll('expenses');
+  expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [
+    ['Date', 'Merchant', 'Category', 'Amount (₹)', 'Method', 'Note'].map(esc).join(','),
+    ...expenses.map(e => {
+      const cat = getCat(e.category);
+      return [e.date, e.merchant || cat.name, cat.name, e.amount, e.method || '', e.note || ''].map(esc).join(',');
+    }),
+  ];
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `expenses-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${expenses.length} transactions`);
+}
+
+async function exportPDF() {
+  const expenses = await db.getAll('expenses');
+  expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+
+  const total = expenses.reduce((s, e) => s + e.amount, 0);
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const rows = expenses.map(e => {
+    const cat = getCat(e.category);
+    const d = new Date(e.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `<tr>
+      <td>${d}</td>
+      <td>${e.merchant || cat.name}</td>
+      <td><span class="cat-badge">${cat.emoji} ${cat.name}</span></td>
+      <td class="amt">₹${e.amount.toLocaleString('en-IN')}</td>
+      <td>${e.method || ''}</td>
+      <td class="note">${e.note || ''}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Expense Report — ${dateStr}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a0d18; padding: 32px; font-size: 13px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; border-bottom: 2px solid #e8469a; padding-bottom: 12px; }
+  h1 { font-size: 22px; font-weight: 800; color: #e8469a; }
+  .sub { font-size: 12px; color: #a06090; margin-top: 2px; }
+  .total-box { text-align: right; }
+  .total-label { font-size: 11px; color: #a06090; text-transform: uppercase; letter-spacing: 0.05em; }
+  .total-val { font-size: 26px; font-weight: 800; color: #1a0d18; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #a06090; padding: 8px 10px; border-bottom: 1px solid #fce7f3; background: #fdf5fb; }
+  tbody tr:nth-child(even) { background: #fdf5fb; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid #fce7f3; vertical-align: top; }
+  .amt { font-weight: 700; text-align: right; white-space: nowrap; }
+  .note { color: #a06090; font-size: 12px; }
+  .cat-badge { background: #fce7f3; border-radius: 12px; padding: 2px 8px; white-space: nowrap; }
+  tfoot td { padding: 10px; font-weight: 700; font-size: 14px; border-top: 2px solid #e8469a; }
+  tfoot .amt { color: #e8469a; font-size: 16px; }
+  @media print { body { padding: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>💸 Expense Report</h1>
+    <div class="sub">Generated ${dateStr} · ${expenses.length} transactions</div>
+  </div>
+  <div class="total-box">
+    <div class="total-label">Total Spent</div>
+    <div class="total-val">₹${total.toLocaleString('en-IN')}</div>
+  </div>
+</header>
+<table>
+  <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th style="text-align:right">Amount</th><th>Method</th><th>Note</th></tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="3"><strong>Total</strong></td><td class="amt">₹${total.toLocaleString('en-IN')}</td><td colspan="2"></td></tr></tfoot>
+</table>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 400);
 }
 
 function mountTransactions() {
@@ -1134,6 +1257,20 @@ function mountTransactions() {
   document.getElementById('cat-filter')?.addEventListener('change', e => {
     state.filterCategory = e.target.value || null;
     renderView();
+  });
+
+  document.getElementById('open-export')?.addEventListener('click', () => openModal('export-modal'));
+  document.getElementById('cancel-export')?.addEventListener('click', () => closeModal('export-modal'));
+  document.getElementById('export-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal('export-modal');
+  });
+  document.getElementById('export-csv')?.addEventListener('click', async () => {
+    closeModal('export-modal');
+    await exportCSV();
+  });
+  document.getElementById('export-pdf')?.addEventListener('click', async () => {
+    closeModal('export-modal');
+    await exportPDF();
   });
 
   // Tap to edit

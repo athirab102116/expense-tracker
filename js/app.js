@@ -1252,6 +1252,7 @@ async function renderBudgets() {
     <div class="modal-title" id="budget-modal-title">Set Budget</div>
     <form id="budget-form">
       <input type="hidden" id="b-id">
+      <input type="hidden" id="b-cat-id">
       <label class="field-label">Category</label>
       <select id="b-cat" class="field-input">${catOptionsForModal}</select>
       <label class="field-label">Monthly Budget (₹)</label>
@@ -1259,6 +1260,7 @@ async function renderBudgets() {
       <button type="submit" class="btn-primary">Save Budget</button>
       <button type="button" class="btn-secondary" id="cancel-budget">Cancel</button>
       <button type="button" class="btn-secondary danger" id="delete-budget" style="display:none">Delete Budget</button>
+      <button type="button" class="btn-secondary danger" id="delete-budget-cat" style="display:none">Delete Category</button>
     </form>
   </div>
 </div>
@@ -1271,6 +1273,7 @@ function mountBudgets() {
     document.getElementById('b-amount').value = '';
     document.getElementById('budget-modal-title').textContent = 'Set Budget';
     document.getElementById('delete-budget').style.display = 'none';
+    document.getElementById('delete-budget-cat').style.display = 'none';
     openModal('budget-modal');
   });
 
@@ -1280,10 +1283,12 @@ function mountBudgets() {
       const budget = await db.get('budgets', bid);
       if (!budget) return;
       document.getElementById('b-id').value = budget.id;
+      document.getElementById('b-cat-id').value = budget.categoryId;
       document.getElementById('b-cat').value = budget.categoryId;
       document.getElementById('b-amount').value = budget.amount;
       document.getElementById('budget-modal-title').textContent = 'Edit Budget';
       document.getElementById('delete-budget').style.display = '';
+      document.getElementById('delete-budget-cat').style.display = '';
       openModal('budget-modal');
     });
   });
@@ -1294,6 +1299,21 @@ function mountBudgets() {
     await db.delete('budgets', bid);
     closeModal('budget-modal');
     showToast('Budget deleted');
+    gistSync();
+    renderView();
+  });
+
+  document.getElementById('delete-budget-cat')?.addEventListener('click', async () => {
+    const catId = document.getElementById('b-cat-id').value;
+    if (!catId) return;
+    // Delete the category and any budgets for it
+    await db.delete('categories', catId);
+    // Remove all budgets tied to this category
+    const allBudgets = await db.getAll('budgets');
+    for (const b of allBudgets.filter(b => b.categoryId === catId)) await db.delete('budgets', b.id);
+    state.categories = await db.getAll('categories');
+    closeModal('budget-modal');
+    showToast('Category deleted');
     gistSync();
     renderView();
   });

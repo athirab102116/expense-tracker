@@ -644,8 +644,8 @@ async function renderDashboard() {
   </div>
 
   <div class="card chart-card">
-    <div class="chart-title">6-month trend</div>
-    <div class="chart-wrap-bar"><canvas id="trendChart"></canvas></div>
+    <div class="chart-title">Budget vs Actual</div>
+    <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
   </div>
 </div>
 
@@ -734,7 +734,7 @@ async function mountDashboard() {
   // Charts
   if (!state.pictureMode && expenses.length > 0) renderPieChart(expenses);
   renderBarChart(expenses, month);
-  await renderTrendChart(y, m);
+  await renderBudgetVsActualChart(month);
 }
 
 function renderPieChart(expenses) {
@@ -809,48 +809,51 @@ function renderBarChart(expenses, month) {
   });
 }
 
-async function renderTrendChart(y, m) {
-  const ctx = document.getElementById('trendChart');
+async function renderBudgetVsActualChart(month) {
+  const wrap = document.getElementById('budget-chart-wrap');
+  const ctx = document.getElementById('budgetChart');
   if (!ctx) return;
   if (state.trendChart) { state.trendChart.destroy(); state.trendChart = null; }
 
-  const labels = [], data = [];
-  for (let i = 5; i >= 0; i--) {
-    let mm = m - i, yy = y;
-    while (mm <= 0) { mm += 12; yy--; }
-    const ym = `${yy}-${String(mm).padStart(2, '0')}`;
-    const exps = await db.getByIndex('expenses', 'month', ym);
-    const sum = exps.reduce((s, e) => s + e.amount, 0);
-    labels.push(new Date(yy, mm - 1, 1).toLocaleString('default', { month: 'short' }));
-    data.push(sum);
+  const allBudgets = await db.getAll('budgets');
+  const monthBudgets = allBudgets.filter(b => b.month === month);
+  const expenses = await db.getByIndex('expenses', 'month', month);
+
+  if (monthBudgets.length === 0) {
+    if (wrap) wrap.innerHTML = '<div class="empty-state" style="padding:24px 0">No budgets set — add budgets to see this chart</div>';
+    return;
   }
+
+  const spentByCat = {};
+  for (const e of expenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
+
+  const labels = monthBudgets.map(b => getCat(b.categoryId).name);
+  const budgetData = monthBudgets.map(b => b.amount);
+  const spentData  = monthBudgets.map(b => spentByCat[b.categoryId] || 0);
+  const leftData   = monthBudgets.map(b => Math.max(0, b.amount - (spentByCat[b.categoryId] || 0)));
 
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
   const textColor = isDark ? '#8d8d93' : '#8e8e93';
 
   state.trendChart = new Chart(ctx, {
-    type: 'line',
+    type: 'bar',
     data: {
       labels,
-      datasets: [{
-        data,
-        borderColor: '#f472b6',
-        backgroundColor: 'rgba(244,114,182,0.12)',
-        borderWidth: 2,
-        pointBackgroundColor: '#f472b6',
-        pointRadius: 5,
-        tension: 0.3,
-        fill: true,
-      }]
+      datasets: [
+        { label: 'Budget',    data: budgetData, backgroundColor: 'rgba(96,165,250,0.75)',  borderRadius: 4 },
+        { label: 'Spent',     data: spentData,  backgroundColor: 'rgba(248,113,113,0.75)', borderRadius: 4 },
+        { label: 'Remaining', data: leftData,   backgroundColor: 'rgba(52,211,153,0.75)',  borderRadius: 4 },
+      ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: {
-        callbacks: { label: ctx => ` ${fmt(ctx.raw)}` }
-      }},
+      plugins: {
+        legend: { display: true, labels: { color: textColor, boxWidth: 12, padding: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.raw)}` } }
+      },
       scales: {
-        x: { grid: { color: gridColor }, ticks: { color: textColor } },
+        x: { grid: { color: gridColor }, ticks: { color: textColor, maxRotation: 30 } },
         y: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, beginAtZero: true }
       }
     }
@@ -1177,7 +1180,7 @@ async function renderBudgets() {
   const totalPct = totalBudget > 0 ? Math.min((totalSpent / totalBudget) * 100, 100) : 0;
   const overallStatus = totalPct >= 100 ? 'over' : totalPct >= 80 ? 'warn' : 'ok';
 
-  const totalSummary = monthBudgets.length > 0 ? `
+  const totalSummary = `
   <div class="budget-total-card card">
     <div class="budget-total-row">
       <div class="budget-total-col">
@@ -1192,14 +1195,16 @@ async function renderBudgets() {
       <div class="budget-total-divider"></div>
       <div class="budget-total-col">
         <div class="budget-total-label">${totalRemaining < 0 ? 'Over by' : 'Remaining'}</div>
-        <div class="budget-total-val ${totalRemaining < 0 ? 'red' : 'green'}">${fmt(Math.abs(totalRemaining))}</div>
+        <div class="budget-total-val ${totalRemaining < 0 ? 'red' : totalBudget > 0 ? 'green' : ''}">${fmt(Math.abs(totalRemaining))}</div>
       </div>
     </div>
+    ${totalBudget > 0 ? `
     <div class="progress-bar-wrap" style="margin-top:10px">
       <div class="progress-bar ${overallStatus}" style="width:${totalPct.toFixed(1)}%"></div>
     </div>
     <div style="text-align:center;margin-top:4px;font-size:12px;color:var(--text3)">${totalPct.toFixed(0)}% of budget used</div>
-  </div>` : '';
+    ` : '<div style="text-align:center;margin-top:8px;font-size:12px;color:var(--text3)">No budgets set for this month</div>'}
+  </div>`;
 
   const budgetRows = monthBudgets.length === 0
     ? '<div class="empty-state">No budgets set for this month.<br>Tap + to add one.</div>'

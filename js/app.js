@@ -85,7 +85,11 @@ function openAddModal(editData = null) {
   document.getElementById('add-modal-body').innerHTML = renderAddForm(editData);
   openModal('add-modal');
   mountAddForm(true);
-  setTimeout(() => document.getElementById('add-modal')?.querySelector('.amount-input')?.focus(), 80);
+  // close on backdrop click
+  const el = document.getElementById('add-modal');
+  el._backdropHandler = e => { if (e.target === el) closeAddModal(); };
+  el.addEventListener('click', el._backdropHandler);
+  setTimeout(() => el?.querySelector('.amount-input')?.focus(), 80);
 }
 
 function closeAddModal() {
@@ -953,6 +957,7 @@ function renderAddForm(editData = null) {
   return `
 <div class="view-add">
   <div class="add-header">
+    <button class="modal-close-btn" id="close-add-modal" title="Close" type="button">✕</button>
     <h2>${isEdit ? 'Edit Expense' : 'Add Expense'}</h2>
     ${isEdit ? '<button class="btn-link danger" id="delete-expense">Delete</button>' : ''}
   </div>
@@ -1067,6 +1072,11 @@ function mountAddForm(modalMode = false) {
   document.getElementById('cancel-edit')?.addEventListener('click', () => {
     state.editingExpense = null;
     if (modalMode) { closeAddModal(); } else { setView('transactions'); }
+  });
+
+  document.getElementById('close-add-modal')?.addEventListener('click', () => {
+    state.editingExpense = null;
+    if (modalMode) { closeAddModal(); } else { setView('dashboard'); }
   });
 
   // Form submit

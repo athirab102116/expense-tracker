@@ -403,7 +403,16 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 /* ── Add Form ── */
 .view-add { padding-top: 8px; }
 .add-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.add-header h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+.add-header h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; flex: 1; text-align: center; }
+.modal-close-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: none; background: var(--surface2);
+  color: var(--text3); font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+.modal-close-btn:hover { background: var(--border); color: var(--text); }
 
 .amount-input-wrap {
   display: flex; align-items: center;

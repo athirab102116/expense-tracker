@@ -1500,6 +1500,7 @@ async function renderSettings() {
   return `
 <div class="view-settings">
   <h2 class="view-title">Settings</h2>
+  <div class="settings-grid">
 
   <!-- Demo data -->
   <div class="settings-section card">
@@ -1643,6 +1644,7 @@ async function renderSettings() {
     <p class="hint-text">Expense Tracker PWA · All data stored on your device · No accounts · No servers</p>
     <p class="hint-text">Version 1.0</p>
   </div>
+  </div><!-- /settings-grid -->
 </div>
 `;
 }

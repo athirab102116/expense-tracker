@@ -483,6 +483,8 @@ function setView(v) {
 
 async function renderView() {
   const main = document.getElementById('main-content');
+  main.style.opacity = '0';
+  main.style.transform = 'translateY(6px)';
   state.categories = await db.getAll('categories');
   switch (state.view) {
     case 'dashboard':    main.innerHTML = await renderDashboard(); mountDashboard(); break;
@@ -491,6 +493,12 @@ async function renderView() {
     case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
     case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
   }
+  requestAnimationFrame(() => {
+    main.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+    main.style.opacity = '1';
+    main.style.transform = 'translateY(0)';
+    setTimeout(() => { main.style.transition = ''; }, 200);
+  });
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -551,9 +559,9 @@ async function renderDashboard() {
       const cat = getCat(id);
       const pct = total > 0 ? ((amt / total) * 100).toFixed(1) : '0';
       return `<div class="cat-row" data-cat="${id}">
-        <span class="cat-emoji">${cat.emoji}</span>
+        <span class="cat-emoji-wrap" style="background:${cat.color}22">${cat.emoji}</span>
         <span class="cat-name">${cat.name}</span>
-        <span class="cat-pct">${pct}%</span>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%;background:${cat.color}"></div></div>
         <span class="cat-amt">${fmt(amt)}</span>
       </div>`;
     }).join('');
@@ -1074,7 +1082,7 @@ async function renderTransactions() {
   ).join('');
 
   const groupsHTML = Object.entries(groups).length === 0
-    ? '<div class="empty-state">No expenses found</div>'
+    ? '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">No expenses found</div><div class="empty-sub">Try adjusting your search or filter</div></div>'
     : Object.entries(groups).map(([date, exps]) => {
         const dayTotal = exps.reduce((s, e) => s + e.amount, 0);
         const d = new Date(date + 'T00:00:00');
@@ -1092,7 +1100,7 @@ async function renderTransactions() {
                   <div class="exp-icon" style="background:${cat.color}22;color:${cat.color}">${cat.emoji}</div>
                   <div class="exp-info">
                     <div class="exp-title">${e.merchant || cat.name}</div>
-                    <div class="exp-sub">${cat.name}${e.note ? ' · ' + e.note : ''} · ${e.method}</div>
+                    <div class="exp-sub">${cat.name}${e.note ? ' · ' + e.note : ''}<span class="method-pill method-${(e.method||'').toLowerCase()}">${e.method||''}</span></div>
                   </div>
                   <div class="exp-right">
                     <div class="exp-amt">${fmt(e.amount)}</div>
@@ -1344,14 +1352,14 @@ async function renderBudgets() {
   </div>`;
 
   const budgetRows = monthBudgets.length === 0
-    ? '<div class="empty-state">No budgets set for this month.<br>Tap + to add one.</div>'
+    ? '<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-title">No budgets yet</div><div class="empty-sub">Tap + to set a budget for this month</div></div>'
     : monthBudgets.map(b => {
         const cat = getCat(b.categoryId);
         const spent = spentByCat[b.categoryId] || 0;
         const pct = Math.min((spent / b.amount) * 100, 100);
         const status = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok';
         return `
-          <div class="budget-item card" data-id="${b.id}">
+          <div class="budget-item card" data-id="${b.id}" style="border-left:4px solid ${cat.color}">
             <div class="budget-top">
               <span class="budget-cat">${cat.emoji} ${cat.name}</span>
               <span class="budget-amounts ${status}">${fmt(spent)} / ${fmt(b.amount)}</span>

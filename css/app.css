@@ -82,6 +82,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   overflow-x: hidden;
   padding: 16px 16px calc(var(--tab-height) + var(--safe-bottom) + 16px);
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 /* ── Bottom Nav ── */
@@ -614,8 +615,8 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   display: flex; justify-content: space-between; align-items: center;
   padding: 4px 4px 6px;
 }
-.day-label { font-size: 13px; font-weight: 700; color: var(--text3); }
-.day-total { font-size: 13px; font-weight: 700; color: var(--text2); }
+.day-label { font-size: 14px; font-weight: 700; color: var(--text3); }
+.day-total { font-size: 14px; font-weight: 700; color: var(--text2); }
 
 .exp-item {
   display: flex; align-items: center; gap: 12px;
@@ -641,8 +642,8 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .exp-info { flex: 1; min-width: 0; }
 .exp-title { font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .exp-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
-.exp-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
-.exp-amt { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
+.exp-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.exp-amt { font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
 .delete-btn { font-size: 16px; opacity: 0.4; padding: 2px; }
 .delete-btn:active { opacity: 1; }
 
@@ -710,7 +711,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 /* ── Settings ── */
 .view-settings { padding-top: 8px; }
-.settings-section { margin-bottom: 14px; }
+.settings-section { margin-bottom: 14px; transition: box-shadow 0.2s; }
 .settings-section-title {
   font-size: 12px; font-weight: 700; color: var(--text3);
   text-transform: uppercase; letter-spacing: 0.07em;
@@ -765,6 +766,49 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   color: var(--text2);
   margin: 10px 0;
 }
+
+/* ── Category rows with inline bars ── */
+.cat-row { gap: 10px; }
+.cat-emoji-wrap {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.cat-bar-track {
+  flex: 1; height: 6px;
+  background: var(--surface2);
+  border-radius: 3px; overflow: hidden;
+  min-width: 40px;
+}
+.cat-bar-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+  opacity: 0.85;
+}
+
+/* ── Payment method pills ── */
+.method-pill {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.method-upi  { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.method-card { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.method-cash { background: rgba(34,197,94,0.15);  color: #16a34a; }
+
+/* ── Richer empty states ── */
+.empty-icon  { font-size: 44px; margin-bottom: 12px; }
+.empty-title { font-size: 16px; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
+.empty-sub   { font-size: 13px; color: var(--text3); }
+
+/* ── Budget item color accent ── */
+.budget-item.card { border-left-width: 4px; border-left-style: solid; }
 
 /* ── Export ── */
 .export-btn {
@@ -869,6 +913,25 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 /* ── View titles ── */
 .view-title { font-size: 24px; font-weight: 800; margin-bottom: 14px; letter-spacing: -0.5px; }
+
+/* ── Mobile sticky submit ── */
+@media (max-width: 767px) {
+  .view-add { padding-bottom: 88px; }
+  .btn-primary[type="submit"] {
+    position: sticky;
+    bottom: calc(var(--tab-height) + var(--safe-bottom) + 8px);
+    z-index: 10;
+    box-shadow: 0 -4px 20px rgba(232,70,154,0.25), 0 4px 16px rgba(232,70,154,0.4);
+  }
+}
+
+/* ── Settings card hover ── */
+@media (min-width: 768px) {
+  .settings-section.card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-1px);
+  }
+}
 
 /* ════════════════════════════════════════════════
    DESKTOP LAYOUT  (768px+)

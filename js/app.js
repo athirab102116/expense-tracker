@@ -1338,7 +1338,12 @@ function renderPieChart(expenses) {
   }
 
   const dpr = window.devicePixelRatio || 1;
-  const SIZE = canvas.parentElement?.offsetWidth || 400;
+  // Size the chart to 50% of the card that contains it
+  const card = canvas.closest('.chart-card') || canvas.parentElement?.parentElement;
+  const cardW = card?.clientWidth || 600;
+  const SIZE = Math.max(120, Math.floor(cardW * 0.50));
+  const wrap = canvas.parentElement;
+  if (wrap) { wrap.style.width = SIZE + 'px'; wrap.style.maxWidth = SIZE + 'px'; }
   canvas.width = SIZE * dpr;
   canvas.height = SIZE * dpr;
   canvas.style.width  = SIZE + 'px';

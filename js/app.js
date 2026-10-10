@@ -2003,6 +2003,21 @@ async function renderSettings() {
     }
   </div>
 
+  <!-- Categories -->
+  <div class="settings-section card">
+    <div class="settings-section-title">🏷️ Categories</div>
+    <div id="cat-settings-list">
+      ${state.categories.map(cat => `
+        <div class="cat-setting-row" data-cat-id="${cat.id}">
+          <div class="cat-setting-icon" style="background:${cat.color}22;color:${cat.color}">${cat.emoji}</div>
+          <span class="cat-setting-name">${cat.name}</span>
+          ${cat.id !== 'other' ? `<button class="cat-setting-del" data-cat-id="${cat.id}" title="Delete">✕</button>` : '<span style="width:28px"></span>'}
+        </div>
+      `).join('')}
+    </div>
+    <button class="btn-add-cat" id="open-add-cat-btn" style="margin-top:14px;width:100%;padding:10px;border-radius:var(--radius-sm)">＋ Add Category</button>
+  </div>
+
   <!-- About -->
   <div class="settings-section card">
     <div class="settings-section-title">ℹ️ About</div>
@@ -2037,6 +2052,123 @@ function mountSettings() {
     renderView();
   });
 
+  // Open add-category modal
+  document.getElementById('open-add-cat-btn')?.addEventListener('click', () => openAddCategoryModal());
+
+  // Delete category buttons
+  document.querySelectorAll('.cat-setting-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const catId = btn.dataset.catId;
+      const cat = state.categories.find(c => c.id === catId);
+      if (!cat) return;
+      if (!confirm(`Delete "${cat.name}"? Existing expenses in this category will be moved to Other.`)) return;
+      // Re-assign expenses to 'other'
+      const all = await db.getAll('expenses');
+      for (const e of all.filter(e => e.category === catId)) {
+        await db.put('expenses', { ...e, category: 'other' });
+      }
+      await db.delete('categories', catId);
+      state.categories = await db.getAll('categories');
+      showToast(`${cat.name} deleted`);
+      renderView();
+    });
+  });
+
+  document.getElementById('cat-add-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal('cat-add-modal');
+  });
+}
+
+// ─── Add Category Modal ───────────────────────────────────────────────────────
+const CAT_EMOJI_PRESETS = ['🍽️','🛒','🚌','🏪','💡','🏠','🎬','💊','📚','✈️','☕','🎁','💅','🐾','🏋️','🎵','🍕','🥗','🎮','💻','🧴','🌿','🎨','🏦','💰','🧾','🤝','🛠️','📱','🎯'];
+const CAT_COLOR_PRESETS = ['#FF6B6B','#FF8E53','#FFC312','#A3CB38','#1289A7','#4ECDC4','#45B7D1','#A29BFE','#FD79A8','#E056FD','#6C5CE7','#00B894','#FDCB6E','#E17055','#74B9FF','#55EFC4','#636E72','#DDA0DD','#98D8C8','#F8C291'];
+
+function openAddCategoryModal() {
+  const firstEmoji = CAT_EMOJI_PRESETS[0];
+  const firstColor = CAT_COLOR_PRESETS[0];
+
+  const emojiGrid = CAT_EMOJI_PRESETS.map((em, i) =>
+    `<button type="button" class="emoji-preset-btn${i === 0 ? ' selected' : ''}" data-emoji="${em}">${em}</button>`
+  ).join('');
+
+  const colorGrid = CAT_COLOR_PRESETS.map((c, i) =>
+    `<button type="button" class="color-swatch${i === 0 ? ' selected' : ''}" data-color="${c}" style="background:${c}" title="${c}"></button>`
+  ).join('');
+
+  document.getElementById('cat-add-modal-body').innerHTML = `
+<div style="padding-top:4px">
+  <div class="add-header" style="margin-bottom:18px">
+    <button class="modal-close-btn" id="close-cat-add-modal" type="button">✕</button>
+    <h2 style="font-size:20px;font-weight:800;letter-spacing:-0.4px;flex:1;text-align:center">New Category</h2>
+    <span style="width:32px"></span>
+  </div>
+
+  <div id="cat-preview" style="display:flex;align-items:center;gap:14px;background:var(--surface2);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:20px">
+    <div id="cat-preview-icon" style="width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:26px;background:${firstColor}22;flex-shrink:0">${firstEmoji}</div>
+    <div>
+      <div id="cat-preview-name" style="font-size:16px;font-weight:700;color:var(--text)">Category Name</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">Preview</div>
+    </div>
+  </div>
+
+  <label class="field-label">Name</label>
+  <input type="text" id="new-cat-name" class="field-input" placeholder="e.g. Dining Out, Gym…" maxlength="32" autocomplete="off">
+
+  <label class="field-label">Icon</label>
+  <div class="emoji-presets">${emojiGrid}</div>
+
+  <label class="field-label">Colour</label>
+  <div class="color-swatches">${colorGrid}</div>
+
+  <button class="btn-primary" id="save-cat-btn" type="button">＋ Add Category</button>
+</div>
+`;
+
+  openModal('cat-add-modal');
+
+  let selectedEmoji = firstEmoji;
+  let selectedColor = firstColor;
+
+  const updatePreview = () => {
+    document.getElementById('cat-preview-icon').style.background = selectedColor + '22';
+    document.getElementById('cat-preview-icon').textContent = selectedEmoji;
+    const name = document.getElementById('new-cat-name').value.trim();
+    document.getElementById('cat-preview-name').textContent = name || 'Category Name';
+  };
+
+  document.getElementById('new-cat-name')?.addEventListener('input', updatePreview);
+
+  document.getElementById('close-cat-add-modal')?.addEventListener('click', () => closeModal('cat-add-modal'));
+
+  document.querySelectorAll('#cat-add-modal-body .emoji-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#cat-add-modal-body .emoji-preset-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedEmoji = btn.dataset.emoji;
+      updatePreview();
+    });
+  });
+
+  document.querySelectorAll('#cat-add-modal-body .color-swatch').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#cat-add-modal-body .color-swatch').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedColor = btn.dataset.color;
+      updatePreview();
+    });
+  });
+
+  document.getElementById('save-cat-btn')?.addEventListener('click', async () => {
+    const name = document.getElementById('new-cat-name').value.trim();
+    if (!name) { showToast('Enter a category name', 'error'); return; }
+    // Generate a unique ID from name
+    const id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36);
+    await db.add('categories', { id, name, emoji: selectedEmoji, color: selectedColor });
+    state.categories = await db.getAll('categories');
+    closeModal('cat-add-modal');
+    showToast(`${selectedEmoji} ${name} added!`);
+    renderView();
+  });
 }
 
 // ─── Excel / CSV Import ──────────────────────────────────────────────────────

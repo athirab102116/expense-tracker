@@ -387,7 +387,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 }
 .toggle-btn.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(122,155,100,0.35); }
 
-.chart-wrap { max-width: 480px; margin: 0 auto 16px; position: relative; }
+.chart-wrap { width: 50%; max-width: 50%; margin: 0 auto 16px; position: relative; }
 .chart-wrap-bar { height: 180px; }
 
 /* Pie slice label overlay */
@@ -1346,7 +1346,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   #pie-view {
     display: flex; align-items: center; gap: 20px;
   }
-  #pie-view .chart-wrap { flex-shrink: 0; width: 405px; max-width: 405px; margin: 0; }
+  #pie-view .chart-wrap { flex-shrink: 0; width: 50%; max-width: 50%; margin: 0; }
   #pie-view .cat-list { flex: 1; min-width: 0; }
 
   /* ── Transactions ── */
@@ -1445,7 +1445,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
   .total-card { padding: 26px 28px; }
   .chart-wrap-bar { height: 220px; }
-  #pie-view .chart-wrap { width: 180px; max-width: 180px; }
+  #pie-view .chart-wrap { width: 50%; max-width: 50%; }
 
   /* Budgets: 3 columns comfortably */
   #budget-list { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
@@ -1466,7 +1466,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .view-add { padding: 32px 44px 56px; max-width: 1200px; }
 
   .chart-wrap-bar { height: 240px; }
-  #pie-view .chart-wrap { width: 200px; max-width: 200px; }
+  #pie-view .chart-wrap { width: 50%; max-width: 50%; }
 
   .view-add { max-width: 680px; }
 

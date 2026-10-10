@@ -1338,7 +1338,7 @@ function renderPieChart(expenses) {
   }
 
   const dpr = window.devicePixelRatio || 1;
-  const SIZE = Math.min(canvas.parentElement?.offsetWidth || 446, 446);
+  const SIZE = canvas.parentElement?.offsetWidth || 400;
   canvas.width = SIZE * dpr;
   canvas.height = SIZE * dpr;
   canvas.style.width  = SIZE + 'px';

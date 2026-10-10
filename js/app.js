@@ -1346,6 +1346,7 @@ function renderPieChart(expenses) {
   canvas.style.width  = SIZE + 'px';
   canvas.style.height = SIZE + 'px';
 
+  canvas.style.display = 'block';
   const c2d = canvas.getContext('2d');
   c2d.scale(dpr, dpr);
 
@@ -1392,7 +1393,45 @@ function renderPieChart(expenses) {
   state.chart = cleanup;
 
   // ── Draw ─────────────────────────────────────────────────────────────────────
+  let _draw3dFailed = false;
   function draw(progress) {
+    if (_draw3dFailed) { drawFlat(progress); return; }
+    try { draw3d(progress); } catch(e) { _draw3dFailed = true; console.error('3D pie error:', e); drawFlat(progress); }
+  }
+  function drawFlat(progress) {
+    c2d.clearRect(0, 0, SIZE, SIZE);
+    const pa = -Math.PI / 2 + progress * Math.PI * 2;
+    const R  = SIZE * 0.40;
+    c2d.save();
+    c2d.shadowColor = 'rgba(168,85,247,0.40)'; c2d.shadowBlur = 18;
+    c2d.beginPath(); c2d.arc(cx, topCY, R + 2, 0, Math.PI * 2);
+    c2d.fillStyle = '#0d0618'; c2d.fill();
+    c2d.restore();
+    for (const s of slices) {
+      const end = Math.min(s.endAngle, pa);
+      if (end <= s.startAngle) continue;
+      const pop = slices.indexOf(s) === activeIdx;
+      const ox = pop ? 8 * Math.cos(s.midAngle) : 0;
+      const oy = pop ? 8 * Math.sin(s.midAngle) : 0;
+      c2d.beginPath(); c2d.moveTo(cx + ox, topCY + oy);
+      c2d.arc(cx + ox, topCY + oy, R, s.startAngle, end);
+      c2d.closePath();
+      c2d.fillStyle = s.cat.color; c2d.fill();
+      c2d.strokeStyle = 'rgba(255,255,255,0.22)'; c2d.lineWidth = 1.5; c2d.stroke();
+    }
+    c2d.save();
+    c2d.beginPath(); c2d.arc(cx, topCY, R + 1, 0, Math.PI * 2);
+    c2d.shadowColor = 'rgba(192,132,252,0.7)'; c2d.shadowBlur = 12;
+    c2d.strokeStyle = 'rgba(220,180,255,0.5)'; c2d.lineWidth = 2; c2d.stroke();
+    c2d.restore();
+    for (const p of particles) {
+      c2d.save(); c2d.globalAlpha = Math.max(0, p.life);
+      c2d.fillStyle = p.color; c2d.beginPath();
+      c2d.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2);
+      c2d.fill(); c2d.restore();
+    }
+  }
+  function draw3d(progress) {
     c2d.clearRect(0, 0, SIZE, SIZE);
     const progressAngle = -Math.PI / 2 + progress * Math.PI * 2;
 

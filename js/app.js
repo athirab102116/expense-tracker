@@ -1153,13 +1153,13 @@ async function renderDashboard() {
       <div class="chart-header">
         <span class="chart-title">Where it went</span>
         <div class="toggle-btns">
-          <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🥧 Chart</button>
+          <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🍕 Pizza</button>
           <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🖼️ Picture</button>
         </div>
       </div>
       <div id="pie-view" class="${state.pictureMode ? 'hidden' : ''}">
         ${total > 0
-          ? `<div class="chart-wrap"><canvas id="pieChart"></canvas></div><div class="cat-list">${catRows}</div>`
+          ? `<div class="pizza-chart-wrap"><canvas id="pizzaChart"></canvas></div><div class="cat-list">${catRows}</div>`
           : '<div class="empty-state"><div class="empty-icon">🌸</div><div class="empty-title">No expenses yet</div><div class="empty-sub">Press N or tap + to add one</div></div>'
         }
       </div>
@@ -1225,7 +1225,7 @@ async function mountDashboard() {
     document.getElementById('picture-view').classList.add('hidden');
     document.getElementById('btn-pie').classList.add('active');
     document.getElementById('btn-picture').classList.remove('active');
-    renderPieChart(expenses);
+    renderPizzaChart(expenses);
   });
 
   document.getElementById('btn-picture')?.addEventListener('click', () => {
@@ -1279,7 +1279,7 @@ async function mountDashboard() {
   });
 
   // Charts
-  if (!state.pictureMode && expenses.length > 0) renderPieChart(expenses);
+  if (!state.pictureMode && expenses.length > 0) renderPizzaChart(expenses);
   renderBarChart(expenses, month);
   await renderBudgetVsActualChart(month);
 
@@ -1326,6 +1326,162 @@ function renderPieChart(expenses) {
       }
     }
   });
+}
+
+function renderPizzaChart(expenses) {
+  const canvas = document.getElementById('pizzaChart');
+  if (!canvas) return;
+
+  const byCat = {};
+  for (const e of expenses) byCat[e.category] = (byCat[e.category] || 0) + e.amount;
+  const sorted = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) return;
+
+  const total = sorted.reduce((s, [, v]) => s + v, 0);
+
+  const dpr = window.devicePixelRatio || 1;
+  const SIZE = Math.min(canvas.parentElement?.clientWidth || 280, 280);
+  canvas.width  = SIZE * dpr;
+  canvas.height = SIZE * dpr;
+  canvas.style.width  = SIZE + 'px';
+  canvas.style.height = SIZE + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const cx = SIZE / 2, cy = SIZE / 2;
+  const R  = SIZE / 2 - 6;   // outer edge of crust
+  const RC = R * 0.82;       // inner edge of crust (start of sauce)
+  const RI = R * 0.08;       // tiny hole in center
+
+  // ── Layer 1: drop shadow under the whole pizza ──
+  ctx.save();
+  ctx.shadowColor = 'rgba(80,30,0,0.38)';
+  ctx.shadowBlur  = 18;
+  ctx.shadowOffsetY = 6;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = '#c8611a'; ctx.fill();
+  ctx.restore();
+
+  // ── Layer 2: crust ring — golden-brown radial gradient ──
+  const crustGrad = ctx.createRadialGradient(cx, cy, RC, cx, cy, R);
+  crustGrad.addColorStop(0, '#e8a855');
+  crustGrad.addColorStop(0.45, '#d4813a');
+  crustGrad.addColorStop(0.85, '#b05a1a');
+  crustGrad.addColorStop(1,   '#7a3008');
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = crustGrad; ctx.fill();
+
+  // ── Layer 3: sauce disc ──
+  const sauceGrad = ctx.createRadialGradient(cx - R*0.12, cy - R*0.12, 2, cx, cy, RC);
+  sauceGrad.addColorStop(0,   '#e84c2a');
+  sauceGrad.addColorStop(0.6, '#c43018');
+  sauceGrad.addColorStop(1,   '#9c2010');
+  ctx.beginPath(); ctx.arc(cx, cy, RC, 0, Math.PI * 2); ctx.fillStyle = sauceGrad; ctx.fill();
+
+  // ── Layer 4 & 5: cheese wedges + slice lines ──
+  let angle = -Math.PI / 2;
+  const slices = sorted.map(([id, val]) => {
+    const sweep = (val / total) * Math.PI * 2;
+    const cat = getCat(id);
+    return { id, val, sweep, cat, startAngle: angle, endAngle: (angle += sweep) };
+  });
+
+  // Cheese base per slice
+  for (const s of slices) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, RC, s.startAngle, s.endAngle);
+    ctx.closePath();
+    // Warm cheese gradient, tinted with category color
+    const cheeseGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, RC);
+    cheeseGrad.addColorStop(0,   '#fef3c7');
+    cheeseGrad.addColorStop(0.5, '#fde68a');
+    cheeseGrad.addColorStop(1,   '#fbbf24');
+    ctx.fillStyle = cheeseGrad;
+    ctx.fill();
+    // Category color tint overlay
+    ctx.fillStyle = s.cat.color + '4a';  // ~29% opacity hex suffix
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Melted cheese bubbles at crust edge
+  for (const s of slices) {
+    const midAngle = (s.startAngle + s.endAngle) / 2;
+    const blobR = RC + (R - RC) * 0.3;
+    for (let i = -1; i <= 1; i++) {
+      const a = midAngle + i * 0.18;
+      const bx = cx + blobR * Math.cos(a);
+      const by = cy + blobR * Math.sin(a);
+      ctx.beginPath();
+      ctx.arc(bx, by, (R - RC) * 0.28, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(253,230,138,0.72)';
+      ctx.fill();
+    }
+  }
+
+  // Slice cut lines
+  for (const s of slices) {
+    ctx.beginPath();
+    ctx.moveTo(cx + RI * Math.cos(s.startAngle), cy + RI * Math.sin(s.startAngle));
+    ctx.lineTo(cx + R  * Math.cos(s.startAngle), cy + R  * Math.sin(s.startAngle));
+    ctx.strokeStyle = 'rgba(90,30,0,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // ── Layer 6: crust char spots ──
+  const rng = (seed) => { let x = Math.sin(seed) * 10000; return x - Math.floor(x); };
+  for (let i = 0; i < 18; i++) {
+    const a = rng(i * 3.7) * Math.PI * 2;
+    const rr = RC + (R - RC) * (0.25 + rng(i * 5.1) * 0.6);
+    const bx = cx + rr * Math.cos(a), by = cy + rr * Math.sin(a);
+    ctx.beginPath();
+    ctx.arc(bx, by, 2.5 + rng(i * 7.3) * 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(60,15,0,${0.18 + rng(i * 2.9) * 0.22})`;
+    ctx.fill();
+  }
+
+  // ── Layer 7: category emoji toppings ──
+  const EMOJI_SIZE = Math.max(12, Math.round(SIZE * 0.085));
+  ctx.font = `${EMOJI_SIZE}px serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const s of slices) {
+    if (s.sweep < 0.22) continue;  // skip tiny slices
+    const midAngle = (s.startAngle + s.endAngle) / 2;
+    // Place emoji at ~55% of the sauce radius
+    const er = RC * 0.55;
+    const ex = cx + er * Math.cos(midAngle);
+    const ey = cy + er * Math.sin(midAngle);
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.fillText(s.cat.emoji, 0, 0);
+    ctx.restore();
+
+    // Second emoji at ~85% radius if slice is large enough
+    if (s.sweep > 0.7) {
+      const er2 = RC * 0.82;
+      const ex2 = cx + er2 * Math.cos(midAngle);
+      const ey2 = cy + er2 * Math.sin(midAngle);
+      ctx.save();
+      ctx.translate(ex2, ey2);
+      ctx.fillText(s.cat.emoji, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // ── Layer 8: gloss highlight (top-left arc) ──
+  const gloss = ctx.createRadialGradient(cx - R*0.25, cy - R*0.3, R*0.05, cx - R*0.1, cy - R*0.1, R*0.6);
+  gloss.addColorStop(0,   'rgba(255,255,255,0.22)');
+  gloss.addColorStop(0.5, 'rgba(255,255,255,0.06)');
+  gloss.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.beginPath(); ctx.arc(cx, cy, RC, 0, Math.PI * 2); ctx.fillStyle = gloss; ctx.fill();
+
+  // ── Center hole ──
+  ctx.beginPath(); ctx.arc(cx, cy, RI, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(150,50,10,0.5)'; ctx.fill();
 }
 
 function renderBarChart(expenses, month) {

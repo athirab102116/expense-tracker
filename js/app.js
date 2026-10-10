@@ -987,47 +987,34 @@ async function renderDashboard() {
     </div>
   </div>
 
-  <div class="dash-main">
-    <div class="dash-left">
-      <div class="card chart-card">
-        <div class="chart-header">
-          <span class="chart-title">Where it went</span>
-          <div class="toggle-btns">
-            <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🥧 Chart</button>
-            <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🖼️ Picture</button>
-          </div>
-        </div>
-        <div id="pie-view" class="${state.pictureMode ? 'hidden' : ''}">
-          ${total > 0
-            ? `<div class="chart-wrap"><canvas id="pieChart"></canvas></div><div class="cat-list">${catRows}</div>`
-            : '<div class="empty-state"><div class="empty-icon">🌸</div><div class="empty-title">No expenses yet</div><div class="empty-sub">Press N or tap + to add one</div></div>'
-          }
-        </div>
-        <div id="picture-view" class="${state.pictureMode ? '' : 'hidden'}">
-          ${total > 0 ? `<div class="picture-grid">${pictureTiles}</div>` : '<div class="empty-state">No expenses this month</div>'}
+  <div class="dash-cols">
+    <div class="card chart-card chart-card-full">
+      <div class="chart-header">
+        <span class="chart-title">Where it went</span>
+        <div class="toggle-btns">
+          <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🥧 Chart</button>
+          <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🖼️ Picture</button>
         </div>
       </div>
-
-      <div class="card chart-card">
-        <div class="chart-title">Daily Spending</div>
-        <div class="chart-wrap-bar"><canvas id="barChart"></canvas></div>
+      <div id="pie-view" class="${state.pictureMode ? 'hidden' : ''}">
+        ${total > 0
+          ? `<div class="chart-wrap"><canvas id="pieChart"></canvas></div><div class="cat-list">${catRows}</div>`
+          : '<div class="empty-state"><div class="empty-icon">🌸</div><div class="empty-title">No expenses yet</div><div class="empty-sub">Press N or tap + to add one</div></div>'
+        }
       </div>
-
-      <div class="card chart-card chart-card-wide">
-        <div class="chart-title">Budget vs Actual</div>
-        <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
+      <div id="picture-view" class="${state.pictureMode ? '' : 'hidden'}">
+        ${total > 0 ? `<div class="picture-grid">${pictureTiles}</div>` : '<div class="empty-state">No expenses this month</div>'}
       </div>
     </div>
 
-    <div class="dash-right">
-      <div class="card recent-card">
-        <div class="recent-header">
-          <span class="chart-title">Recent Transactions</span>
-          <button class="btn-link" id="view-all-txn">View all →</button>
-        </div>
-        ${recentItemsHTML}
-        ${last5.length > 0 ? `<div style="margin-top:12px;text-align:center"><button class="btn-link" id="view-all-txn-2">View all transactions →</button></div>` : ''}
-      </div>
+    <div class="card chart-card chart-card-full chart-card-tall">
+      <div class="chart-title">Daily Spending</div>
+      <div class="chart-wrap-bar-tall"><canvas id="barChart"></canvas></div>
+    </div>
+
+    <div class="card chart-card chart-card-full">
+      <div class="chart-title">Budget vs Actual</div>
+      <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
     </div>
   </div>
 </div>
@@ -1916,9 +1903,6 @@ function mountBudgets() {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 async function renderSettings() {
-  const githubToken = await db.getSetting('github_token', '');
-  const gistId = await db.getSetting('github_gist_id', '');
-  const lastGistSync = await db.getSetting('last_gist_sync', '');
   const gmailToken = await db.getSetting('gmail_token', null);
   const gmailExpiry = await db.getSetting('gmail_token_expiry', 0);
   const gmailConnected = !!(gmailToken && Date.now() < gmailExpiry);
@@ -1943,30 +1927,6 @@ async function renderSettings() {
         <input type="checkbox" id="smart-cat-toggle" ${smartCat ? 'checked' : ''}>
         <span class="toggle-slider"></span>
       </label>
-    </div>
-  </div>
-
-  <!-- GitHub Gist Sync -->
-  <div class="settings-section card">
-    <div class="settings-section-title">☁️ Sync (Safari ↔ Home Screen)</div>
-    <p class="hint-text" style="margin-bottom:10px">Keeps your expenses in sync between Safari and the installed app. Every expense you add is saved to a private GitHub Gist automatically.</p>
-    <label class="field-label">GitHub Token <span style="font-weight:400;color:var(--text3)">(gist scope)</span></label>
-    <input type="password" id="github-token-input" class="field-input" placeholder="ghp_xxxxxxxxxxxx"
-      value="${githubToken}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
-    <p class="hint-text" style="margin-top:6px">
-      <a href="https://github.com/settings/tokens/new?scopes=gist&description=Expense+Tracker+Sync" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">👉 Create a token here</a> — tick <strong>gist</strong> → Generate → copy &amp; paste above
-    </p>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn-primary" id="save-gist-token" style="flex:1">${githubToken ? 'Update &amp; Sync' : 'Save &amp; Sync Now'}</button>
-      ${gistId ? `<button class="btn-secondary" id="gist-pull-now" style="flex:1">↓ Pull Latest</button>` : ''}
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
-      <span id="gist-sync-status" class="hint-text" style="font-size:12px">${
-        lastGistSync ? `☁️ Last sync: ${lastGistSync}` :
-        gistId ? '✅ Configured — auto-syncs on every expense' :
-        'Not set up yet'
-      }</span>
-      ${gistId ? `<button class="btn-link danger" id="gist-disconnect" style="font-size:12px">Disconnect</button>` : ''}
     </div>
   </div>
 
@@ -2048,35 +2008,6 @@ function mountSettings() {
     renderView();
   });
 
-  // GitHub Gist sync
-  document.getElementById('save-gist-token')?.addEventListener('click', async () => {
-    const token = document.getElementById('github-token-input').value.trim();
-    if (!token) return showToast('Paste your GitHub token first', 'error');
-    await db.setSetting('github_token', token);
-    const el = document.getElementById('gist-sync-status');
-    if (el) el.textContent = '⏳ Syncing…';
-    await gistSync();
-    setTimeout(() => renderView(), 1500);
-  });
-
-  document.getElementById('gist-pull-now')?.addEventListener('click', async () => {
-    const el = document.getElementById('gist-sync-status');
-    if (el) el.textContent = '⏳ Loading from GitHub…';
-    await loadFromGist();
-    state.categories = await db.getAll('categories');
-    state.merchantRules = await db.getAll('merchant_rules');
-    showToast('✅ Data loaded from GitHub!');
-    renderView();
-  });
-
-  document.getElementById('gist-disconnect')?.addEventListener('click', async () => {
-    if (!confirm('Disconnect GitHub sync? Your local data stays, but it will no longer sync.')) return;
-    await db.setSetting('github_token', '');
-    await db.setSetting('github_gist_id', '');
-    await db.setSetting('last_gist_sync', '');
-    showToast('Disconnected');
-    renderView();
-  });
 }
 
 // ─── Excel / CSV Import ──────────────────────────────────────────────────────

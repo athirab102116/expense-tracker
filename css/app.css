@@ -1089,13 +1089,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .stat-over { color: var(--danger); }
 
   /* Two-column dashboard */
-  .dash-main {
-    display: grid;
-    grid-template-columns: 3fr 2fr;
-    gap: 16px; align-items: start;
-  }
-  .dash-left { display: flex; flex-direction: column; gap: 14px; }
-  .dash-right { position: sticky; top: 24px; }
+  .dash-cols { display: flex; flex-direction: column; gap: 16px; }
+  .chart-card-full { width: 100%; }
+  .chart-wrap-bar-tall { height: 320px; }
 
   /* Recent transactions card */
   .recent-card { padding: 18px; }
@@ -1343,8 +1339,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .stat-value { font-size: 17px; }
 
   /* Two-column dashboard: single column on mobile */
-  .dash-main { display: flex; flex-direction: column; gap: 12px; }
-  .dash-right { display: none; }
+  .dash-cols { gap: 12px; }
+  .chart-wrap-bar-tall { height: 220px; }
 
   /* Hide table, show card list on mobile */
   .txn-table-wrap { display: none !important; }

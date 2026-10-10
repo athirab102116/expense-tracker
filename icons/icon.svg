@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background: warm sage green -->
+  <rect width="512" height="512" rx="112" fill="#5a7e4a"/>
+
+  <!-- Daisy petals (8 petals, each rotated around center 256,256) -->
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(45 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(90 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(135 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(180 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(225 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(270 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(315 256 256)"/>
+
+  <!-- Center disc: warm gold coin -->
+  <circle cx="256" cy="256" r="88" fill="#c8a840"/>
+  <circle cx="256" cy="256" r="78" fill="none" stroke="#d4b850" stroke-width="3.5"/>
+
+  <!-- ₹ symbol in center -->
+  <text x="256" y="296" text-anchor="middle" dominant-baseline="auto"
+        font-family="-apple-system, 'Arial Unicode MS', Arial, sans-serif"
+        font-size="92" font-weight="700" fill="#7a5010">₹</text>
+</svg>

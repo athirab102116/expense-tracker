@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Generate App Icons</title>
+<style>
+  body { font-family: sans-serif; padding: 32px; background: #f4efe8; color: #2c2016; }
+  canvas { display: block; margin: 8px 0; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+  button { margin: 8px 4px; padding: 10px 20px; background: #7a9b64; color: #fff; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 20px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<h2>App Icon Generator — open in Chrome, then download all three</h2>
+<div id="out"></div>
+<script>
+const SVG_SRC = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#5a7e4a"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(45 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(90 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(135 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(180 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(225 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(270 256 256)"/>
+  <ellipse cx="256" cy="152" rx="40" ry="76" fill="#f0ead8" opacity="0.95" transform="rotate(315 256 256)"/>
+  <circle cx="256" cy="256" r="88" fill="#c8a840"/>
+  <circle cx="256" cy="256" r="78" fill="none" stroke="#d4b850" stroke-width="3.5"/>
+  <text x="256" y="296" text-anchor="middle" font-family="-apple-system, Arial Unicode MS, Arial, sans-serif" font-size="92" font-weight="700" fill="#7a5010">&#8377;</text>
+</svg>`;
+
+const sizes = [
+  { name: 'icon-512.png', size: 512 },
+  { name: 'icon-192.png', size: 192 },
+  { name: 'icon-180.png', size: 180 },
+];
+
+const blob = new Blob([SVG_SRC], { type: 'image/svg+xml' });
+const url  = URL.createObjectURL(blob);
+const img  = new Image();
+
+img.onload = () => {
+  const out = document.getElementById('out');
+  sizes.forEach(({ name, size }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, size, size);
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const preview = document.createElement('canvas');
+    preview.width = preview.height = Math.min(size, 120);
+    preview.getContext('2d').drawImage(canvas, 0, 0, preview.width, preview.height);
+    row.appendChild(preview);
+
+    const btn = document.createElement('button');
+    btn.textContent = `Download ${name} (${size}×${size})`;
+    btn.onclick = () => {
+      const a = document.createElement('a');
+      a.download = name;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    };
+    row.appendChild(btn);
+    out.appendChild(row);
+  });
+};
+
+img.src = url;
+</script>
+</body>
+</html>

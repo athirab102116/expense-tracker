@@ -1,15 +1,15 @@
 export const DEFAULT_CATEGORIES = [
-  { id: 'food',          name: 'Food',          emoji: '🍔', color: '#FF6B6B' },
-  { id: 'groceries',     name: 'Groceries',     emoji: '🛒', color: '#4ECDC4' },
-  { id: 'transport',     name: 'Transport',     emoji: '🚗', color: '#45B7D1' },
-  { id: 'shopping',      name: 'Shopping',      emoji: '🛍️', color: '#96CEB4' },
-  { id: 'bills',         name: 'Bills',         emoji: '📄', color: '#FFEAA7' },
-  { id: 'rent',          name: 'Rent',          emoji: '🏠', color: '#DDA0DD' },
-  { id: 'entertainment', name: 'Entertainment', emoji: '🎮', color: '#98D8C8' },
-  { id: 'health',        name: 'Health',        emoji: '💊', color: '#F7DC6F' },
-  { id: 'education',     name: 'Education',     emoji: '📚', color: '#A29BFE' },
-  { id: 'travel',        name: 'Travel',        emoji: '✈️', color: '#FD79A8' },
-  { id: 'other',         name: 'Other',         emoji: '📦', color: '#B2BEC3' },
+  { id: 'food',          name: 'Food',          emoji: '🍔', color: '#d47050' },
+  { id: 'groceries',     name: 'Groceries',     emoji: '🛒', color: '#7aaa58' },
+  { id: 'transport',     name: 'Transport',     emoji: '🚗', color: '#5580b8' },
+  { id: 'shopping',      name: 'Shopping',      emoji: '🛍️', color: '#b070c0' },
+  { id: 'bills',         name: 'Bills',         emoji: '📄', color: '#c8a840' },
+  { id: 'rent',          name: 'Rent',          emoji: '🏠', color: '#6a4c38' },
+  { id: 'entertainment', name: 'Entertainment', emoji: '🎮', color: '#4daa88' },
+  { id: 'health',        name: 'Health',        emoji: '💊', color: '#c06888' },
+  { id: 'education',     name: 'Education',     emoji: '📚', color: '#7070c8' },
+  { id: 'travel',        name: 'Travel',        emoji: '✈️', color: '#4ab0c0' },
+  { id: 'other',         name: 'Other',         emoji: '📦', color: '#908878' },
 ];
 
 export const DEFAULT_MERCHANT_RULES = [

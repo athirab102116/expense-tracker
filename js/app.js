@@ -932,7 +932,7 @@ function initParticles() {
   canvas.width = W; canvas.height = H;
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const maxOp = isDark ? 0.13 : 0.08;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8469a';
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7a9b64';
   const syms = ['₹', '$', '○'];
   const pts = Array.from({ length: 18 }, () => ({
     x: Math.random() * W, y: Math.random() * H,
@@ -1300,7 +1300,7 @@ function renderPieChart(expenses) {
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   state.chart = new Chart(ctx, {
     type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 3, borderColor: isDark ? '#271322' : '#ffffff', hoverOffset: 10 }] },
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 3, borderColor: isDark ? '#25221a' : '#fffdf6', hoverOffset: 10 }] },
     options: {
       responsive: true,
       maintainAspectRatio: true,
@@ -1341,9 +1341,9 @@ function renderBarChart(expenses, month) {
   const todayDay = parseInt(todayStr.slice(8), 10);
 
   const barColors = byDay.map((v, i) => {
-    if (isCurrentMonth && i + 1 === todayDay) return '#e8469a';
-    if (!v) return isDark ? 'rgba(232,70,154,0.13)' : 'rgba(232,70,154,0.1)';
-    return isDark ? 'rgba(244,114,182,0.65)' : 'rgba(232,70,154,0.6)';
+    if (isCurrentMonth && i + 1 === todayDay) return ''#7a9b64'';
+    if (!v) return isDark ? 'rgba(122,155,100,0.13)' : 'rgba(122,155,100,0.1)';
+    return isDark ? 'rgba(122,155,100,0.65)' : 'rgba(122,155,100,0.6)';
   });
 
   state.barChart = new Chart(ctx, {
@@ -1783,22 +1783,22 @@ async function exportPDF() {
 <title>Expense Report — ${dateStr}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a0d18; padding: 32px; font-size: 13px; }
-  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; border-bottom: 2px solid #e8469a; padding-bottom: 12px; }
-  h1 { font-size: 22px; font-weight: 800; color: #e8469a; }
-  .sub { font-size: 12px; color: #a06090; margin-top: 2px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #2c2016; padding: 32px; font-size: 13px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; border-bottom: 2px solid #7a9b64; padding-bottom: 12px; }
+  h1 { font-size: 22px; font-weight: 800; color: #7a9b64; }
+  .sub { font-size: 12px; color: #9a7e62; margin-top: 2px; }
   .total-box { text-align: right; }
-  .total-label { font-size: 11px; color: #a06090; text-transform: uppercase; letter-spacing: 0.05em; }
-  .total-val { font-size: 26px; font-weight: 800; color: #1a0d18; }
+  .total-label { font-size: 11px; color: #9a7e62; text-transform: uppercase; letter-spacing: 0.05em; }
+  .total-val { font-size: 26px; font-weight: 800; color: #2c2016; }
   table { width: 100%; border-collapse: collapse; }
-  thead th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #a06090; padding: 8px 10px; border-bottom: 1px solid #fce7f3; background: #fdf5fb; }
-  tbody tr:nth-child(even) { background: #fdf5fb; }
-  tbody td { padding: 9px 10px; border-bottom: 1px solid #fce7f3; vertical-align: top; }
+  thead th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #9a7e62; padding: 8px 10px; border-bottom: 1px solid #dfe5d0; background: #f4efe8; }
+  tbody tr:nth-child(even) { background: #f4efe8; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid #dfe5d0; vertical-align: top; }
   .amt { font-weight: 700; text-align: right; white-space: nowrap; }
-  .note { color: #a06090; font-size: 12px; }
-  .cat-badge { background: #fce7f3; border-radius: 12px; padding: 2px 8px; white-space: nowrap; }
-  tfoot td { padding: 10px; font-weight: 700; font-size: 14px; border-top: 2px solid #e8469a; }
-  tfoot .amt { color: #e8469a; font-size: 16px; }
+  .note { color: #9a7e62; font-size: 12px; }
+  .cat-badge { background: #edf0e3; border-radius: 12px; padding: 2px 8px; white-space: nowrap; }
+  tfoot td { padding: 10px; font-weight: 700; font-size: 14px; border-top: 2px solid #7a9b64; }
+  tfoot .amt { color: #7a9b64; font-size: 16px; }
   @media print { body { padding: 16px; } }
 </style>
 </head>

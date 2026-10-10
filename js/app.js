@@ -854,10 +854,12 @@ async function renderDashboard() {
   const diff = total - prevTotal;
   const diffPct = prevTotal > 0 ? ((diff / prevTotal) * 100).toFixed(0) : '';
 
-  // Total planned budget for this month
+  // Overall monthly budget (global setting) takes priority; falls back to sum of category budgets
+  const overallBudgetSetting = await db.getSetting('monthly_budget', 0);
   const allBudgets = await db.getAll('budgets');
   const monthBudgets = allBudgets.filter(b => b.month === month);
-  const totalBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
+  const catBudgetTotal = monthBudgets.reduce((s, b) => s + b.amount, 0);
+  const totalBudget = overallBudgetSetting > 0 ? overallBudgetSetting : catBudgetTotal;
 
   // Category breakdown
   const byCat = {};
@@ -1767,41 +1769,83 @@ async function renderBudgets() {
   const budgets = await db.getAll('budgets');
   const monthBudgets = budgets.filter(b => b.month === month);
   const expenses = await db.getByIndex('expenses', 'month', month);
+  const overallBudget = await db.getSetting('monthly_budget', 0);
 
   const spentByCat = {};
   for (const e of expenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
 
-  const totalBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
   const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
-  const totalRemaining = totalBudget - totalSpent;
-  const totalPct = totalBudget > 0 ? Math.min((totalSpent / totalBudget) * 100, 100) : 0;
-  const overallStatus = totalPct >= 100 ? 'over' : totalPct >= 80 ? 'warn' : 'ok';
 
-  const totalSummary = `
+  // Overall budget card
+  const ovPct = overallBudget > 0 ? Math.min((totalSpent / overallBudget) * 100, 100) : 0;
+  const ovStatus = ovPct >= 100 ? 'over' : ovPct >= 80 ? 'warn' : 'ok';
+  const ovRemaining = overallBudget - totalSpent;
+
+  const overallCard = overallBudget > 0 ? `
+  <div class="overall-budget-card card">
+    <div class="overall-budget-header">
+      <div>
+        <div class="overall-budget-label">Monthly Spending Limit</div>
+        <div class="overall-budget-amount">${fmt(overallBudget)}</div>
+      </div>
+      <button class="btn-secondary-sm" id="edit-overall-budget">Edit</button>
+    </div>
+    <div class="progress-bar-wrap" style="margin-top:14px;height:10px">
+      <div class="progress-bar ${ovStatus}" style="width:${ovPct.toFixed(1)}%"></div>
+    </div>
+    <div class="overall-budget-stats">
+      <div class="overall-budget-stat">
+        <span class="overall-budget-stat-label">Spent</span>
+        <span class="overall-budget-stat-val">${fmt(totalSpent)}</span>
+      </div>
+      <div class="overall-budget-stat overall-budget-stat-center">
+        <span class="overall-budget-stat-pct ${ovStatus}-text">${ovPct.toFixed(0)}%</span>
+      </div>
+      <div class="overall-budget-stat overall-budget-stat-right">
+        <span class="overall-budget-stat-label">${ovRemaining < 0 ? 'Over by' : 'Left'}</span>
+        <span class="overall-budget-stat-val ${ovRemaining < 0 ? 'danger-text' : 'success-text'}">${fmt(Math.abs(ovRemaining))}</span>
+      </div>
+    </div>
+  </div>` : `
+  <div class="overall-budget-empty card">
+    <div class="overall-budget-empty-inner">
+      <div class="overall-budget-empty-icon">🎯</div>
+      <div>
+        <div style="font-weight:700;font-size:15px;margin-bottom:3px">Set a monthly limit</div>
+        <div class="hint-text" style="margin:0">Track total spending against a single budget</div>
+      </div>
+    </div>
+    <button class="btn-primary" id="edit-overall-budget" style="margin-top:14px">Set Budget</button>
+  </div>`;
+
+  const catTotalBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
+  const catTotalRemaining = catTotalBudget - totalSpent;
+  const catTotalPct = catTotalBudget > 0 ? Math.min((totalSpent / catTotalBudget) * 100, 100) : 0;
+  const catOverallStatus = catTotalPct >= 100 ? 'over' : catTotalPct >= 80 ? 'warn' : 'ok';
+
+  const totalSummary = monthBudgets.length > 0 ? `
   <div class="budget-total-card card">
     <div class="budget-total-row">
       <div class="budget-total-col">
-        <div class="budget-total-label">Total Budget</div>
-        <div class="budget-total-val">${fmt(totalBudget)}</div>
+        <div class="budget-total-label">Category Total</div>
+        <div class="budget-total-val">${fmt(catTotalBudget)}</div>
       </div>
       <div class="budget-total-divider"></div>
       <div class="budget-total-col">
-        <div class="budget-total-label">Total Spent</div>
+        <div class="budget-total-label">Spent</div>
         <div class="budget-total-val">${fmt(totalSpent)}</div>
       </div>
       <div class="budget-total-divider"></div>
       <div class="budget-total-col">
-        <div class="budget-total-label">${totalRemaining < 0 ? 'Over by' : 'Remaining'}</div>
-        <div class="budget-total-val ${totalRemaining < 0 ? 'red' : totalBudget > 0 ? 'green' : ''}">${fmt(Math.abs(totalRemaining))}</div>
+        <div class="budget-total-label">${catTotalRemaining < 0 ? 'Over by' : 'Remaining'}</div>
+        <div class="budget-total-val ${catTotalRemaining < 0 ? 'red' : 'green'}">${fmt(Math.abs(catTotalRemaining))}</div>
       </div>
     </div>
-    ${totalBudget > 0 ? `
     <div class="progress-bar-wrap" style="margin-top:10px">
-      <div class="progress-bar ${overallStatus}" style="width:${totalPct.toFixed(1)}%"></div>
+      <div class="progress-bar ${catOverallStatus}" style="width:${catTotalPct.toFixed(1)}%"></div>
     </div>
-    <div style="text-align:center;margin-top:4px;font-size:12px;color:var(--text3)">${totalPct.toFixed(0)}% of budget used</div>
-    ` : '<div style="text-align:center;margin-top:8px;font-size:12px;color:var(--text3)">No budgets set for this month</div>'}
-  </div>`;
+    <div style="text-align:center;margin-top:4px;font-size:12px;color:var(--text3)">${catTotalPct.toFixed(0)}% of category budgets used</div>
+  </div>` : '';
 
   const budgetRows = monthBudgets.length === 0
     ? '<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-title">No budgets yet</div><div class="empty-sub">Tap + to set a budget for this month</div></div>'
@@ -1839,8 +1883,24 @@ async function renderBudgets() {
     <h2 class="view-title">Budgets — ${monthLabel(month)}</h2>
     <button class="btn-icon" id="add-budget">＋</button>
   </div>
+  ${overallCard}
+  ${monthBudgets.length > 0 ? `<div class="budget-section-label">By category</div>` : ''}
   ${totalSummary}
   <div id="budget-list">${budgetRows}</div>
+</div>
+
+<!-- Overall budget edit modal -->
+<div class="modal" id="overall-budget-modal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Monthly Spending Limit</div>
+    <p class="hint-text" style="margin-bottom:16px">Set the maximum you want to spend each month. This shows as the main budget bar on your dashboard.</p>
+    <label class="field-label">Amount (₹)</label>
+    <input type="number" id="overall-budget-input" inputmode="decimal" placeholder="e.g. 50000" class="field-input" min="1" step="1">
+    <button class="btn-primary" id="save-overall-budget">Save Limit</button>
+    <button class="btn-secondary" id="cancel-overall-budget">Cancel</button>
+    <button class="btn-secondary danger" id="remove-overall-budget" style="display:none">Remove Limit</button>
+  </div>
 </div>
 
 <div class="modal" id="budget-modal">
@@ -1865,6 +1925,37 @@ async function renderBudgets() {
 }
 
 function mountBudgets() {
+  // Overall budget modal
+  document.getElementById('edit-overall-budget')?.addEventListener('click', async () => {
+    const current = await db.getSetting('monthly_budget', 0);
+    document.getElementById('overall-budget-input').value = current > 0 ? current : '';
+    document.getElementById('remove-overall-budget').style.display = current > 0 ? 'block' : 'none';
+    openModal('overall-budget-modal');
+    setTimeout(() => document.getElementById('overall-budget-input')?.focus(), 80);
+  });
+
+  document.getElementById('save-overall-budget')?.addEventListener('click', async () => {
+    const val = parseAmount(document.getElementById('overall-budget-input').value);
+    if (!val || val <= 0) { showToast('Enter a valid amount', 'error'); return; }
+    await db.setSetting('monthly_budget', val);
+    closeModal('overall-budget-modal');
+    showToast(`Monthly limit set to ${fmt(val)}`);
+    renderView();
+  });
+
+  document.getElementById('cancel-overall-budget')?.addEventListener('click', () => closeModal('overall-budget-modal'));
+
+  document.getElementById('remove-overall-budget')?.addEventListener('click', async () => {
+    await db.setSetting('monthly_budget', 0);
+    closeModal('overall-budget-modal');
+    showToast('Monthly limit removed');
+    renderView();
+  });
+
+  document.getElementById('overall-budget-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal('overall-budget-modal');
+  });
+
   document.getElementById('add-budget')?.addEventListener('click', () => {
     document.getElementById('b-id').value = '';
     document.getElementById('b-amount').value = '';

@@ -538,16 +538,21 @@ function showGmailPreview(transactions, importedRefs) {
         createdAt: Date.now()
       };
       await db.add('expenses', expense);
-      if (t.refNo) newRefs.push(t.refNo);
+      newRefs.push(t._dupeKey || (t.refNo ? t.refNo : `msg:${t.id}`));
       count++;
     }
     await db.setSetting('gmail_imported_refs', newRefs);
-    await db.setSetting('gmail_last_sync', Math.floor(Date.now() / 1000));
+    // Update rows: mark imported/skipped pending rows
+    const updatedRows = (state.gmailSyncResult?.rows || []).map(r => {
+      if (r.status !== 'pending') return r;
+      const t = transactions[r.idx];
+      const wasImported = checks[r.idx]?.checked;
+      return { ...r, status: wasImported ? 'imported' : 'skipped_by_user' };
+    });
     state.gmailSyncResult = {
       checked: state.gmailSyncResult?.checked || 0,
       imported: count,
-      skipped: state.gmailSyncResult?.skipped || 0,
-      senders: state.gmailSyncResult?.senders || '',
+      rows: updatedRows,
       error: null
     };
     gistSync();
@@ -560,12 +565,8 @@ function showGmailPreview(transactions, importedRefs) {
 async function gmailDoSync(silent = false) {
   const token = await getGmailToken();
   if (!token) {
-    if (!silent) {
-      await db.setSetting('gmail_token', null);
-      state.gmailSyncResult = { error: 'Token expired — please Reconnect Gmail' };
-      showToast('Gmail token expired — please reconnect', 'error');
-      renderView();
-    }
+    state.gmailSyncResult = { error: 'Token expired — please tap Reconnect Gmail' };
+    if (!silent) { await db.setSetting('gmail_token', null); renderView(); }
     return;
   }
 
@@ -573,91 +574,104 @@ async function gmailDoSync(silent = false) {
   if (btn && !silent) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
 
   try {
+    // Always scan from start date — never use last-sync as floor
     const startDate = await db.getSetting('gmail_start_date', '2026-10-07');
-    const lastSync = await db.getSetting('gmail_last_sync', null);
-
-    // Use whichever is later: start date or last sync date
-    let afterStr;
-    if (lastSync) {
-      const d = new Date(lastSync * 1000);
-      const lastSyncDate = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
-      const startFmt = startDate.replace(/-/g, '/');
-      afterStr = lastSyncDate > startFmt ? lastSyncDate : startFmt;
-    } else {
-      afterStr = startDate.replace(/-/g, '/');
-    }
+    await db.setSetting('gmail_last_sync', null); // clear stale value so it never interferes
+    const afterStr = startDate.replace(/-/g, '/');
     const query = `"is debited from your account" after:${afterStr}`;
 
-    const listRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=100`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (listRes.status === 401) {
-      await db.setSetting('gmail_token', null);
-      state.gmailSyncResult = { error: 'Token expired — please Reconnect Gmail' };
-      if (!silent) renderView();
-      return;
-    }
-    if (!listRes.ok) {
-      state.gmailSyncResult = { error: `Gmail API error ${listRes.status}` };
-      if (!silent) { showToast(state.gmailSyncResult.error, 'error'); renderView(); }
-      return;
-    }
+    // Fetch all pages
+    const allMessages = [];
+    let pageToken = null;
+    do {
+      const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) {
+        await db.setSetting('gmail_token', null);
+        state.gmailSyncResult = { error: 'Token expired — please tap Reconnect Gmail' };
+        if (!silent) renderView();
+        return;
+      }
+      if (!res.ok) {
+        state.gmailSyncResult = { error: `Gmail API error ${res.status}` };
+        if (!silent) renderView();
+        return;
+      }
+      const data = await res.json();
+      allMessages.push(...(data.messages || []));
+      pageToken = data.nextPageToken || null;
+    } while (pageToken);
 
-    const listData = await listRes.json();
-    const messages = listData.messages || [];
+    // Duplicate key = refNo if present, else "msg:{gmailMsgId}"
     const importedRefs = await db.getSetting('gmail_imported_refs', []);
     const importedSet = new Set(importedRefs);
 
-    let checkedCount = 0;
-    let skippedDupe = 0;
-    let skippedNoMatch = 0;
-    const parsed = [];
-    const seenSenders = new Set();
+    const rows = [];      // per-email result rows for display
+    const toImport = [];  // new transactions to show in preview
 
-    for (const msg of messages) {
+    for (const msg of allMessages) {
       const msgRes = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!msgRes.ok) continue;
       const msgData = await msgRes.json();
-      checkedCount++;
 
-      const fromHeader = (msgData.payload?.headers || []).find(h => h.name === 'From');
-      if (fromHeader) seenSenders.add(fromHeader.value);
+      const subjectHeader = (msgData.payload?.headers || []).find(h => h.name === 'Subject');
+      const subject = subjectHeader?.value || '(no subject)';
+      const emailDate = parseInt(msgData.internalDate || Date.now(), 10);
+      const dateStr = new Date(emailDate).toISOString().slice(0, 10);
 
       const text = extractEmailText(msgData.payload || {});
-      const emailDate = parseInt(msgData.internalDate || Date.now(), 10);
+
+      // Skip credits
+      if (/is\s+credited/i.test(text)) {
+        rows.push({ date: dateStr, subject, status: 'credit' });
+        continue;
+      }
+
       const result = parseHdfcEmail(text, emailDate);
 
-      if (!result) { skippedNoMatch++; continue; }
-      if (result.date < startDate) { skippedNoMatch++; continue; } // before start date
-      if (result.refNo && importedSet.has(result.refNo)) { skippedDupe++; continue; }
+      if (!result) {
+        rows.push({ date: dateStr, subject, status: 'failed', snippet: text.slice(0, 150) });
+        continue;
+      }
+
+      // Skip before start date
+      if (result.date < startDate) {
+        rows.push({ date: dateStr, subject, status: 'before_start' });
+        continue;
+      }
+
+      // Duplicate key: refNo preferred, else Gmail message ID
+      const dupeKey = result.refNo ? result.refNo : `msg:${msg.id}`;
+      result._dupeKey = dupeKey;
+
+      if (importedSet.has(dupeKey)) {
+        rows.push({ date: result.date, subject, status: 'dupe' });
+        continue;
+      }
 
       const { categoryId } = await autoCategory(result.merchant);
       result.category = categoryId;
-      parsed.push(result);
+      toImport.push(result);
+      rows.push({ date: result.date, subject, status: 'pending', amount: result.amount, merchant: result.merchant, idx: toImport.length - 1 });
     }
 
-    await db.setSetting('gmail_last_sync', Math.floor(Date.now() / 1000));
-
-    const senderInfo = seenSenders.size > 0 ? [...seenSenders].slice(0, 3).join(', ') : 'none found';
     state.gmailSyncResult = {
-      checked: checkedCount,
+      checked: allMessages.length,
       imported: 0,
-      skipped: skippedDupe + skippedNoMatch,
-      senders: senderInfo,
+      rows,
       error: null
     };
 
-    if (parsed.length === 0) {
+    if (toImport.length === 0) {
       if (!silent) renderView();
       return;
     }
 
-    state.gmailPendingImport = parsed;
-    showGmailPreview(parsed, importedRefs);
+    state.gmailPendingImport = toImport;
+    showGmailPreview(toImport, importedRefs);
 
   } catch (err) {
     state.gmailSyncResult = { error: err.message };
@@ -2086,7 +2100,29 @@ async function renderSettings() {
          ${state.gmailSyncResult
            ? state.gmailSyncResult.error
              ? `<div class="sync-result sync-result-error">⚠️ ${state.gmailSyncResult.error}</div>`
-             : `<div class="sync-result sync-result-ok">✅ Checked ${state.gmailSyncResult.checked} emails · <strong>${state.gmailSyncResult.imported}</strong> imported · ${state.gmailSyncResult.skipped} skipped${state.gmailSyncResult.senders ? `<br><span style="font-size:11px;opacity:0.8">Senders: ${state.gmailSyncResult.senders}</span>` : ''}</div>`
+             : `<div class="sync-result sync-result-ok" style="margin-top:10px">
+                  ✅ Checked ${state.gmailSyncResult.checked} emails · <strong>${state.gmailSyncResult.imported}</strong> imported
+                  ${state.gmailSyncResult.rows?.length ? `
+                  <div class="gmail-result-list">
+                    ${state.gmailSyncResult.rows.map(r => {
+                      const icons = { imported:'✅', dupe:'⏭️', credit:'⏭️', failed:'❌', pending:'🔄', before_start:'⏭️', skipped_by_user:'⏭️' };
+                      const labels = {
+                        imported: `Imported ₹${r.amount} to ${r.merchant}`,
+                        dupe: 'Skipped: already imported',
+                        credit: 'Skipped: credit transaction',
+                        before_start: 'Skipped: before start date',
+                        skipped_by_user: 'Skipped by you',
+                        pending: `Pending ₹${r.amount} to ${r.merchant}`,
+                        failed: `FAILED to parse — <code style="font-size:10px;word-break:break-all">${(r.snippet||'').replace(/</g,'&lt;')}</code>`
+                      };
+                      return `<div class="gmail-result-row gmail-result-${r.status}">
+                        <span class="gmail-result-icon">${icons[r.status]||'•'}</span>
+                        <span class="gmail-result-date">${r.date}</span>
+                        <span class="gmail-result-label">${labels[r.status]||r.status}</span>
+                      </div>`;
+                    }).join('')}
+                  </div>` : ''}
+                </div>`
            : ''}`
       : `<button class="btn-primary" id="gmail-connect-btn">📧 Connect Gmail</button>
          <p class="hint-text" style="margin-top:8px">You'll need a Google OAuth 2.0 Client ID. <a href="https://console.cloud.google.com" target="_blank" rel="noopener" style="color:var(--accent)">Create one here</a> → APIs &amp; Services → Credentials → OAuth Client ID → Web application. Add this page's URL as redirect URI.</p>`

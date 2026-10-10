@@ -1259,6 +1259,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .sync-result { margin-top: 10px; font-size: 13px; padding: 10px 14px; border-radius: var(--radius-sm); line-height: 1.5; }
 .sync-result-ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
 .sync-result-error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.gmail-result-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.gmail-result-row { display: grid; grid-template-columns: 20px 90px 1fr; gap: 6px; align-items: start; font-size: 12px; padding: 4px 6px; border-radius: 6px; color: var(--text); }
+.gmail-result-row:nth-child(odd) { background: var(--surface2); }
+.gmail-result-imported { color: var(--success); }
+.gmail-result-failed { color: var(--danger); }
+.gmail-result-dupe, .gmail-result-credit, .gmail-result-before_start, .gmail-result-skipped_by_user { opacity: 0.55; }
+.gmail-result-date { color: var(--text3); white-space: nowrap; }
+.gmail-result-label { word-break: break-word; }
 .import-hint { font-size: 14px; color: var(--text3); margin: 0 0 20px; line-height: 1.5; }
 
 .import-drop-zone {

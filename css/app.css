@@ -1,27 +1,27 @@
-/* ── Cottage Core Theme ── */
+/* ── Fairyland Theme ✨ ── */
 :root {
-  --bg: #f4efe8;
-  --surface: #fffdf6;
-  --surface2: #edf0e3;
-  --surface3: #dfe5d0;
-  --text: #2c2016;
-  --text2: #6b4f35;
-  --text3: #9a7e62;
-  --accent: #7a9b64;
-  --accent-dark: #587046;
-  --accent-light: rgba(122,155,100,0.12);
-  --accent-gradient: linear-gradient(135deg, #a8c496 0%, #7a9b64 50%, #587046 100%);
-  --danger: #c0624a;
-  --warning: #c8845a;
-  --success: #6a9b5a;
-  --border: rgba(122,155,100,0.18);
-  --shadow-sm: 0 1px 4px rgba(80,60,20,0.08);
-  --shadow: 0 2px 12px rgba(80,60,20,0.10), 0 0 0 1px rgba(122,155,100,0.07);
-  --shadow-lg: 0 8px 32px rgba(80,60,20,0.16), 0 0 0 1px rgba(122,155,100,0.10);
+  --bg: #f7f0ff;
+  --surface: #fef9ff;
+  --surface2: #ede0ff;
+  --surface3: #dfc8ff;
+  --text: #1e0535;
+  --text2: #6b229a;
+  --text3: #b880d8;
+  --accent: #c084fc;
+  --accent-dark: #9333ea;
+  --accent-light: rgba(192,132,252,0.14);
+  --accent-gradient: linear-gradient(135deg, #f0abfc 0%, #c084fc 50%, #9333ea 100%);
+  --danger: #fb7185;
+  --warning: #fb923c;
+  --success: #6ee7b7;
+  --border: rgba(192,132,252,0.22);
+  --shadow-sm: 0 1px 4px rgba(100,30,160,0.10);
+  --shadow: 0 2px 12px rgba(100,30,160,0.12), 0 0 0 1px rgba(192,132,252,0.08);
+  --shadow-lg: 0 8px 32px rgba(100,30,160,0.18), 0 0 0 1px rgba(192,132,252,0.12);
   --radius: 20px;
   --radius-sm: 14px;
   --radius-xs: 10px;
-  --nav-bg: rgba(244,239,232,0.92);
+  --nav-bg: rgba(247,240,255,0.94);
   --tab-height: 83px;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -30,19 +30,19 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1a12;
-    --surface: #25221a;
-    --surface2: #2e2b20;
-    --surface3: #38342a;
-    --text: #f0e8d5;
-    --text2: #c8b898;
-    --text3: #8a7a60;
-    --border: rgba(122,155,100,0.22);
-    --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);
-    --shadow: 0 2px 12px rgba(0,0,0,0.35), 0 0 0 1px rgba(122,155,100,0.1);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(122,155,100,0.12);
-    --nav-bg: rgba(28,26,18,0.96);
-    --accent-light: rgba(122,155,100,0.20);
+    --bg: #0d0618;
+    --surface: #160928;
+    --surface2: #1f0d38;
+    --surface3: #2a1248;
+    --text: #f3e8ff;
+    --text2: #d4a8f0;
+    --text3: #9060c8;
+    --border: rgba(192,132,252,0.24);
+    --shadow-sm: 0 1px 4px rgba(0,0,0,0.45);
+    --shadow: 0 2px 12px rgba(0,0,0,0.40), 0 0 0 1px rgba(192,132,252,0.10);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(192,132,252,0.14);
+    --nav-bg: rgba(13,6,24,0.97);
+    --accent-light: rgba(192,132,252,0.20);
   }
 }
 
@@ -1599,17 +1599,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .sfx-toggle:hover { opacity: 1; }
 .bottom-nav { position: relative; }
 
-/* ── Custom cursor (desktop pointer:fine only) ── */
+/* ── Custom cursor — fairy wand (desktop pointer:fine only) ── */
 #custom-cursor {
   position: fixed;
   top: 0; left: 0;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
+  font-size: 20px;
+  line-height: 1;
   pointer-events: none;
   z-index: 9999;
   transform: translate(-50%, -50%);
   will-change: transform;
+  user-select: none;
+  filter: drop-shadow(0 0 4px rgba(192,132,252,0.7));
 }
 .has-custom-cursor button,
 .has-custom-cursor .card,

@@ -101,8 +101,8 @@
     </div>
   </div>
 
-  <!-- Google Identity Services (for Gmail OAuth) -->
-  <script src="https://accounts.googleapis.com/gsi/client" defer></script>
+  <!-- Google Identity Services (for Gmail OAuth) — load synchronously so it's ready before any module JS -->
+  <script src="https://accounts.google.com/gsi/client"></script>
   <!-- Chart.js (bundled locally) -->
   <script src="lib/chart.umd.min.js"></script>
   <!-- App -->

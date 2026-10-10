@@ -360,7 +360,7 @@ async function loadGIS() {
   if (window.google?.accounts?.oauth2) return;
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = 'https://accounts.googleapis.com/gsi/client';
+    s.src = 'https://accounts.google.com/gsi/client';
     s.onload = resolve; s.onerror = reject;
     document.head.appendChild(s);
   });

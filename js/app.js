@@ -1312,23 +1312,20 @@ function renderPieChart(expenses) {
 
   const total = entries.reduce((s, [, v]) => s + v, 0);
 
-  // Sort descending
   let sliceArr = entries
     .sort((a, b) => b[1] - a[1])
     .map(([id, val]) => ({ id, val, cat: getCat(id), pct: val / total }));
 
-  // Swap adjacent similar-hue slices so contrasting colors sit next to each other
   function hexHue(hex) {
     const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
     const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
     if (!d) return 0;
-    let h = max === r ? (g-b)/d + (g<b?6:0) : max === g ? (b-r)/d+2 : (r-g)/d+4;
+    let h = max === r ? (g-b)/d+(g<b?6:0) : max === g ? (b-r)/d+2 : (r-g)/d+4;
     return h * 60;
   }
-  function hueDist(h1, h2) { const d = Math.abs(h1 - h2); return Math.min(d, 360 - d); }
+  function hueDist(h1, h2) { const d = Math.abs(h1-h2); return Math.min(d, 360-d); }
   for (let i = 0; i < sliceArr.length - 1; i++) {
-    const d = hueDist(hexHue(sliceArr[i].cat.color), hexHue(sliceArr[i+1].cat.color));
-    if (d < 40) {
+    if (hueDist(hexHue(sliceArr[i].cat.color), hexHue(sliceArr[i+1].cat.color)) < 40) {
       for (let j = i+2; j < sliceArr.length; j++) {
         if (hueDist(hexHue(sliceArr[i].cat.color), hexHue(sliceArr[j].cat.color)) >= 40) {
           [sliceArr[i+1], sliceArr[j]] = [sliceArr[j], sliceArr[i+1]]; break;
@@ -1337,14 +1334,14 @@ function renderPieChart(expenses) {
     }
   }
 
-  const dpr = window.devicePixelRatio || 1;
-  // Size the chart to 50% of the card that contains it
+  // ── Canvas sizing ────────────────────────────────────────────────────────────
+  const dpr  = window.devicePixelRatio || 1;
   const card = canvas.closest('.chart-card') || canvas.parentElement?.parentElement;
   const cardW = card?.clientWidth || 600;
-  const SIZE = Math.max(120, Math.floor(cardW * 0.50));
-  const wrap = canvas.parentElement;
+  const SIZE  = Math.max(140, Math.floor(cardW * 0.50));
+  const wrap  = canvas.parentElement;
   if (wrap) { wrap.style.width = SIZE + 'px'; wrap.style.maxWidth = SIZE + 'px'; }
-  canvas.width = SIZE * dpr;
+  canvas.width  = SIZE * dpr;
   canvas.height = SIZE * dpr;
   canvas.style.width  = SIZE + 'px';
   canvas.style.height = SIZE + 'px';
@@ -1352,9 +1349,25 @@ function renderPieChart(expenses) {
   const c2d = canvas.getContext('2d');
   c2d.scale(dpr, dpr);
 
-  const cx = SIZE / 2, cy = SIZE / 2, R = SIZE / 2 - 10;
+  // ── 3D geometry ──────────────────────────────────────────────────────────────
+  const RX    = SIZE * 0.42;           // x-radius of top ellipse
+  const RY    = RX  * 0.38;           // y-radius (perspective squish)
+  const DEPTH = RX  * 0.24;           // extrusion depth
+  const cx    = SIZE / 2;
+  const topCY = SIZE * 0.41;          // centre of top face
+  const botCY = topCY + DEPTH;        // centre of bottom face
 
-  // Pre-compute slice angles
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function rgba(hex, a) {
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  function darken(hex, f) {
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return `rgb(${Math.floor(r*f)},${Math.floor(g*f)},${Math.floor(b*f)})`;
+  }
+
+  // ── Pre-compute slices ───────────────────────────────────────────────────────
   const slices = [];
   let ang = -Math.PI / 2;
   for (const s of sliceArr) {
@@ -1363,126 +1376,261 @@ function renderPieChart(expenses) {
     ang += sweep;
   }
 
-  const isDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const borderCol = () => isDark() ? '#1e0535' : '#f0e6ff';
-
   let activeIdx = -1;
   let particles = [];
-  const cleanup = { raf: null, praf: null, destroy() {
-    if (cleanup.raf) cancelAnimationFrame(cleanup.raf);
-    if (cleanup.praf) cancelAnimationFrame(cleanup.praf);
-    document.getElementById('pie-slice-label')?.remove();
-    canvas.removeEventListener('click', onTap);
-    canvas.removeEventListener('touchstart', onTap);
-  }};
+  let shimPhase = 0;
+
+  const cleanup = {
+    raf: null, praf: null, shimraf: null,
+    destroy() {
+      [this.raf, this.praf, this.shimraf].forEach(r => r && cancelAnimationFrame(r));
+      document.getElementById('pie-slice-label')?.remove();
+      canvas.removeEventListener('click', onTap);
+      canvas.removeEventListener('touchstart', onTap);
+    }
+  };
   state.chart = cleanup;
 
+  // ── Draw ─────────────────────────────────────────────────────────────────────
   function draw(progress) {
     c2d.clearRect(0, 0, SIZE, SIZE);
+    const progressAngle = -Math.PI / 2 + progress * Math.PI * 2;
 
-    // Glow shadow behind pie
+    // 1 · Drop shadow beneath the disc
     c2d.save();
-    c2d.shadowColor = 'rgba(168,85,247,0.40)';
-    c2d.shadowBlur = 22;
-    c2d.beginPath(); c2d.arc(cx, cy, R + 1, 0, Math.PI * 2);
-    c2d.fillStyle = isDark() ? '#1e0535' : '#ede0ff';
+    c2d.shadowColor  = 'rgba(140,0,255,0.55)';
+    c2d.shadowBlur   = 36;
+    c2d.shadowOffsetY = DEPTH + 6;
+    c2d.beginPath();
+    c2d.ellipse(cx, botCY, RX * 0.95, RY * 0.65, 0, 0, Math.PI * 2);
+    c2d.fillStyle = 'rgba(60,0,120,0.01)';
     c2d.fill();
     c2d.restore();
 
-    // Draw slices up to current sweep progress (clockwise from 12 o'clock)
-    const progressAngle = -Math.PI / 2 + progress * Math.PI * 2;
+    // 2 · Side extrusions — sorted back→front (farthest midAngle from π/2 first)
+    const sideSorted = [...slices].sort((a, b) => {
+      const norm = a => ((a.midAngle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+      return Math.abs(norm(b) - Math.PI/2) - Math.abs(norm(a) - Math.PI/2);
+    });
+    for (const s of sideSorted) {
+      const clampedEnd = Math.min(s.endAngle, progressAngle);
+      const visStart = Math.max(s.startAngle, 0);
+      const visEnd   = Math.min(clampedEnd,   Math.PI);
+      if (visEnd <= visStart) continue;
+
+      c2d.save();
+      c2d.beginPath();
+      c2d.moveTo(cx + RX*Math.cos(visStart), topCY + RY*Math.sin(visStart));
+      c2d.lineTo(cx + RX*Math.cos(visStart), botCY + RY*Math.sin(visStart));
+      c2d.ellipse(cx, botCY, RX, RY, 0, visStart, visEnd);
+      c2d.lineTo(cx + RX*Math.cos(visEnd), topCY + RY*Math.sin(visEnd));
+      c2d.ellipse(cx, topCY, RX, RY, 0, visEnd, visStart, true);
+      c2d.closePath();
+
+      const g1 = c2d.createLinearGradient(cx, topCY, cx, botCY + 2);
+      g1.addColorStop(0,   rgba(s.cat.color, 0.90));
+      g1.addColorStop(0.5, rgba(darken(s.cat.color, 0.55), 0.94));
+      g1.addColorStop(1,   rgba(darken(s.cat.color, 0.32), 0.96));
+      c2d.fillStyle = g1; c2d.fill();
+
+      // Holographic sheen on side
+      const g2 = c2d.createLinearGradient(cx, topCY, cx, botCY);
+      g2.addColorStop(0,   'rgba(255,255,255,0.22)');
+      g2.addColorStop(0.45,'rgba(180,100,255,0.09)');
+      g2.addColorStop(1,   'rgba(0,200,255,0.07)');
+      c2d.fillStyle = g2; c2d.fill();
+      c2d.restore();
+    }
+
+    // 3 · Top face slices
     for (let i = 0; i < slices.length; i++) {
       const s = slices[i];
       const clampedEnd = Math.min(s.endAngle, progressAngle);
       if (clampedEnd <= s.startAngle) continue;
+
       const pop = i === activeIdx;
-      const ox = pop ? 9 * Math.cos(s.midAngle) : 0;
-      const oy = pop ? 9 * Math.sin(s.midAngle) : 0;
+      const ox  = pop ? 10 * Math.cos(s.midAngle) : 0;
+      const oy  = pop ? 10 * Math.sin(s.midAngle) * (RY/RX) : 0;
+
       c2d.save();
       c2d.beginPath();
-      c2d.moveTo(cx + ox, cy + oy);
-      c2d.arc(cx + ox, cy + oy, R, s.startAngle, clampedEnd);
+      c2d.moveTo(cx + ox, topCY + oy);
+      c2d.ellipse(cx + ox, topCY + oy, RX, RY, 0, s.startAngle, clampedEnd);
       c2d.closePath();
       c2d.fillStyle = s.cat.color;
       c2d.fill();
-      c2d.strokeStyle = borderCol();
-      c2d.lineWidth = 2.5;
+
+      // Per-slice iridescent tint (complementary hue shift)
+      const h = hexHue(s.cat.color);
+      const iris = c2d.createLinearGradient(cx-RX+ox, topCY-RY+oy, cx+RX+ox, topCY+RY+oy);
+      iris.addColorStop(0,   `hsla(${(h+120)%360},100%,72%,0.16)`);
+      iris.addColorStop(0.5, `hsla(${(h+240)%360},100%,80%,0.11)`);
+      iris.addColorStop(1,   `hsla(${(h+0)%360},100%,70%,0.14)`);
+      c2d.fillStyle = iris; c2d.fill();
+
+      // Thin white border between slices
+      c2d.strokeStyle = 'rgba(255,255,255,0.20)';
+      c2d.lineWidth = 1.5;
       c2d.stroke();
       c2d.restore();
     }
 
-    // Draw sparkle particles
+    // ── Holographic + glass overlays (clipped to top ellipse) ─────────────────
+    c2d.save();
+    c2d.beginPath();
+    c2d.ellipse(cx, topCY, RX, RY, 0, 0, Math.PI * 2);
+    c2d.clip();
+
+    // 4 · Rainbow holographic band (angle rotates with shimmer)
+    const ra1x = cx + Math.cos(shimPhase)       * RX * 1.3;
+    const ra1y = topCY + Math.sin(shimPhase)    * RY * 1.3;
+    const ra2x = cx - Math.cos(shimPhase)       * RX * 1.3;
+    const ra2y = topCY - Math.sin(shimPhase)    * RY * 1.3;
+    const rg = c2d.createLinearGradient(ra1x, ra1y, ra2x, ra2y);
+    rg.addColorStop(0.00, 'rgba(255,0,128,0.11)');
+    rg.addColorStop(0.17, 'rgba(255,110,0,0.09)');
+    rg.addColorStop(0.33, 'rgba(220,255,0,0.08)');
+    rg.addColorStop(0.50, 'rgba(0,255,140,0.09)');
+    rg.addColorStop(0.67, 'rgba(0,140,255,0.10)');
+    rg.addColorStop(0.83, 'rgba(160,0,255,0.11)');
+    rg.addColorStop(1.00, 'rgba(255,0,200,0.10)');
+    c2d.fillStyle = rg;
+    c2d.fillRect(cx - RX, topCY - RY, RX*2, RY*2);
+
+    // 5 · Scanlines
+    c2d.globalAlpha = 0.032;
+    for (let yy = topCY - RY; yy < topCY + RY; yy += 4) {
+      c2d.fillStyle = '#ffffff';
+      c2d.fillRect(cx - RX, yy, RX*2, 1.5);
+    }
+    c2d.globalAlpha = 1;
+
+    // 6 · Moving shimmer stripe
+    const sa  = shimPhase * 1.6 + 1.1;
+    const spx = -Math.sin(sa), spy = Math.cos(sa) * (RY/RX);
+    const sgLen = Math.sqrt(spx*spx + spy*spy);
+    const snx = spx/sgLen, sny = spy/sgLen;
+    const sg = c2d.createLinearGradient(
+      cx + snx*RX*1.6, topCY + sny*RY*1.6,
+      cx - snx*RX*1.6, topCY - sny*RY*1.6
+    );
+    sg.addColorStop(0,    'rgba(255,255,255,0)');
+    sg.addColorStop(0.42, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.50, 'rgba(255,255,255,0.32)');
+    sg.addColorStop(0.58, 'rgba(255,255,255,0)');
+    sg.addColorStop(1,    'rgba(255,255,255,0)');
+    c2d.fillStyle = sg;
+    c2d.fillRect(cx - RX, topCY - RY, RX*2, RY*2);
+
+    c2d.restore(); // end clip
+
+    // 7 · Glass specular highlight (top-left gloss)
+    c2d.save();
+    c2d.beginPath();
+    c2d.ellipse(cx, topCY, RX, RY, 0, 0, Math.PI * 2);
+    c2d.clip();
+    const sg2 = c2d.createRadialGradient(
+      cx - RX*0.28, topCY - RY*0.55, 1,
+      cx - RX*0.06, topCY - RY*0.06, RX*0.78
+    );
+    sg2.addColorStop(0,    'rgba(255,255,255,0.48)');
+    sg2.addColorStop(0.22, 'rgba(255,255,255,0.20)');
+    sg2.addColorStop(0.55, 'rgba(255,255,255,0.06)');
+    sg2.addColorStop(1,    'rgba(255,255,255,0)');
+    c2d.fillStyle = sg2;
+    c2d.fillRect(cx - RX, topCY - RY, RX*2, RY*2);
+    c2d.restore();
+
+    // 8 · Rim glow
+    c2d.save();
+    c2d.beginPath();
+    c2d.ellipse(cx, topCY, RX + 1, RY + 1, 0, 0, Math.PI * 2);
+    c2d.shadowColor = 'rgba(192,132,252,0.85)';
+    c2d.shadowBlur  = 16;
+    c2d.strokeStyle = 'rgba(230,190,255,0.60)';
+    c2d.lineWidth   = 2;
+    c2d.stroke();
+    c2d.restore();
+
+    // 9 · Sparkle particles
     for (const p of particles) {
       c2d.save();
       c2d.globalAlpha = Math.max(0, p.life);
-      c2d.fillStyle = p.color;
+      c2d.shadowColor = p.color;
+      c2d.shadowBlur  = 8;
+      c2d.fillStyle   = p.color;
       c2d.beginPath();
       c2d.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2);
       c2d.fill();
       c2d.restore();
     }
-
-    // Subtle ambient sparkles on first load (fade in with progress)
-    if (progress < 1) return;
   }
 
-  // Sweep-in intro animation
+  // ── Intro sweep animation ────────────────────────────────────────────────────
   let startTs = null;
-  const ANIM_MS = 720;
   function introFrame(ts) {
     if (!startTs) startTs = ts;
-    const t = Math.min((ts - startTs) / ANIM_MS, 1);
-    const ease = 1 - Math.pow(1 - t, 2.8);
-    draw(ease);
-    if (t < 1) cleanup.raf = requestAnimationFrame(introFrame);
-    else cleanup.raf = null;
+    const t = Math.min((ts - startTs) / 820, 1);
+    draw(1 - Math.pow(1 - t, 2.8));
+    if (t < 1) {
+      cleanup.raf = requestAnimationFrame(introFrame);
+    } else {
+      cleanup.raf = null;
+      // Start slow shimmer loop (~20 fps)
+      let last = 0;
+      function shimLoop(ts2) {
+        if (ts2 - last >= 50) { shimPhase += 0.016; draw(1); last = ts2; }
+        cleanup.shimraf = requestAnimationFrame(shimLoop);
+      }
+      cleanup.shimraf = requestAnimationFrame(shimLoop);
+    }
   }
   cleanup.raf = requestAnimationFrame(introFrame);
 
-  // Particle animation loop
+  // ── Particle loop ────────────────────────────────────────────────────────────
   function tickParticles() {
     if (!particles.length) { cleanup.praf = null; return; }
-    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life -= 0.042; }
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life -= 0.038; }
     particles = particles.filter(p => p.life > 0);
     draw(1);
     cleanup.praf = requestAnimationFrame(tickParticles);
   }
 
-  // Hit test: returns slice index or -1
+  // ── Ellipse-aware hit test ───────────────────────────────────────────────────
   function hitTest(x, y) {
-    const dx = x - cx, dy = y - cy;
-    if (dx*dx + dy*dy > R*R) return -1;
+    const dx = (x - cx) / RX, dy = (y - topCY) / RY;
+    if (dx*dx + dy*dy > 1) return -1;
     let a = Math.atan2(dy, dx);
     if (a < -Math.PI / 2) a += Math.PI * 2;
     for (let i = 0; i < slices.length; i++) {
       if (a >= slices[i].startAngle && a < slices[i].endAngle) return i;
     }
-    return slices.length - 1; // edge case: wrap
+    return slices.length - 1;
   }
 
   function showPieLabel(s) {
     document.getElementById('pie-slice-label')?.remove();
-    const wrap = canvas.parentElement;
-    wrap.style.position = 'relative';
+    const wr = canvas.parentElement;
+    wr.style.position = 'relative';
     const el = document.createElement('div');
     el.id = 'pie-slice-label';
     el.className = 'pie-slice-label';
     el.innerHTML = `<div class="psl-cat">${s.cat.emoji} ${s.cat.name}</div>
       <div class="psl-amt">${fmt(s.val)}</div>
-      <div class="psl-pct">${(s.pct * 100).toFixed(1)}%</div>`;
-    el.style.borderColor = s.cat.color + '66';
-    wrap.appendChild(el);
+      <div class="psl-pct">${(s.pct*100).toFixed(1)}%</div>`;
+    el.style.borderColor = s.cat.color + '88';
+    el.style.boxShadow   = `0 0 14px ${s.cat.color}55`;
+    wr.appendChild(el);
     setTimeout(() => el?.classList.add('psl-visible'), 10);
-    if (el._dismiss) clearTimeout(el._dismiss);
     el._dismiss = setTimeout(() => { el?.classList.remove('psl-visible'); setTimeout(() => el?.remove(), 200); }, 2800);
   }
 
   function onTap(e) {
     if (e.type === 'touchstart') e.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    const src = e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
-    const x = (src.clientX - rect.left) / rect.width * SIZE;
-    const y = (src.clientY - rect.top) / rect.height * SIZE;
+    const src  = e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
+    const x = (src.clientX - rect.left) / rect.width  * SIZE;
+    const y = (src.clientY - rect.top)  / rect.height * SIZE;
     const idx = hitTest(x, y);
     if (idx === -1) { activeIdx = -1; draw(1); return; }
 
@@ -1490,16 +1638,15 @@ function renderPieChart(expenses) {
     const s = slices[idx];
     playCategorySound(s.id);
 
-    // Sparkle burst from slice center
     if (cleanup.praf) cancelAnimationFrame(cleanup.praf);
-    const bx = cx + R * 0.62 * Math.cos(s.midAngle);
-    const by = cy + R * 0.62 * Math.sin(s.midAngle);
-    particles = Array.from({ length: 10 }, () => {
-      const a = Math.random() * Math.PI * 2, sp = 1.8 + Math.random() * 2.8;
-      return { x: bx, y: by, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, r: 3 + Math.random()*2.5, life: 1, color: s.cat.color };
+    const bx = cx + RX * 0.58 * Math.cos(s.midAngle);
+    const by = topCY + RY * 0.58 * Math.sin(s.midAngle);
+    particles = Array.from({ length: 12 }, () => {
+      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 3;
+      return { x: bx, y: by, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp*0.42,
+               r: 3 + Math.random()*2.5, life: 1, color: s.cat.color };
     });
     cleanup.praf = requestAnimationFrame(tickParticles);
-
     showPieLabel(s);
     draw(1);
   }

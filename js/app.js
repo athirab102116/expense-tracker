@@ -573,15 +573,20 @@ async function gmailDoSync(silent = false) {
   if (btn && !silent) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
 
   try {
+    const startDate = await db.getSetting('gmail_start_date', '2026-10-07');
     const lastSync = await db.getSetting('gmail_last_sync', null);
-    let query;
+
+    // Use whichever is later: start date or last sync date
+    let afterStr;
     if (lastSync) {
       const d = new Date(lastSync * 1000);
-      const after = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
-      query = `"is debited from your account" after:${after}`;
+      const lastSyncDate = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+      const startFmt = startDate.replace(/-/g, '/');
+      afterStr = lastSyncDate > startFmt ? lastSyncDate : startFmt;
     } else {
-      query = '"is debited from your account" newer_than:90d';
+      afterStr = startDate.replace(/-/g, '/');
     }
+    const query = `"is debited from your account" after:${afterStr}`;
 
     const listRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=100`,
@@ -627,6 +632,7 @@ async function gmailDoSync(silent = false) {
       const result = parseHdfcEmail(text, emailDate);
 
       if (!result) { skippedNoMatch++; continue; }
+      if (result.date < startDate) { skippedNoMatch++; continue; } // before start date
       if (result.refNo && importedSet.has(result.refNo)) { skippedDupe++; continue; }
 
       const { categoryId } = await autoCategory(result.merchant);
@@ -1902,6 +1908,7 @@ async function renderSettings() {
   const gmailExpiry = await db.getSetting('gmail_token_expiry', 0);
   const gmailConnected = !!(gmailToken && Date.now() < gmailExpiry);
   const gmailLastSync = await db.getSetting('gmail_last_sync', null);
+  const gmailStartDate = await db.getSetting('gmail_start_date', '2026-10-07');
   const catRows = state.categories.map(c => `
     <div class="setting-row cat-row-edit" data-id="${c.id}">
       <span class="cat-emoji-lg">${c.emoji}</span>
@@ -2068,6 +2075,8 @@ async function renderSettings() {
   <div class="settings-section card">
     <div class="settings-section-title">📧 Gmail Sync (HDFC)</div>
     <p class="hint-text" style="margin-bottom:12px">Auto-import HDFC Bank UPI transaction emails from Gmail.</p>
+    <label class="field-label" style="margin-bottom:4px">Track expenses from</label>
+    <input type="date" id="gmail-start-date-input" class="field-input" value="${gmailStartDate}" style="max-width:200px;margin-bottom:12px">
     ${gmailConnected
       ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
            <button class="btn-primary" id="gmail-sync-btn">🔄 Sync Gmail</button>
@@ -2096,6 +2105,12 @@ async function renderSettings() {
 }
 
 function mountSettings() {
+  // Gmail start date
+  document.getElementById('gmail-start-date-input')?.addEventListener('change', async e => {
+    const val = e.target.value;
+    if (val) { await db.setSetting('gmail_start_date', val); showToast('Start date saved'); }
+  });
+
   // Gmail sync
   document.getElementById('gmail-connect-btn')?.addEventListener('click', gmailConnectClick);
   document.getElementById('gmail-sync-btn')?.addEventListener('click', gmailSyncClick);

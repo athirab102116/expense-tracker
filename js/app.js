@@ -1341,7 +1341,7 @@ function renderBarChart(expenses, month) {
   const todayDay = parseInt(todayStr.slice(8), 10);
 
   const barColors = byDay.map((v, i) => {
-    if (isCurrentMonth && i + 1 === todayDay) return ''#7a9b64'';
+    if (isCurrentMonth && i + 1 === todayDay) return '#7a9b64';
     if (!v) return isDark ? 'rgba(122,155,100,0.13)' : 'rgba(122,155,100,0.1)';
     return isDark ? 'rgba(122,155,100,0.65)' : 'rgba(122,155,100,0.6)';
   });

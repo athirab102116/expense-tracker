@@ -960,7 +960,10 @@ async function renderDashboard() {
   ${storageBanner}
   <div class="dash-header">
     <button class="month-nav" id="prev-month">‹</button>
-    <h2 class="month-label">${monthLabel(month)}</h2>
+    <div class="month-label-wrap">
+      <h2 class="month-label">${monthLabel(month)}</h2>
+      ${month !== today().slice(0,7) ? `<button class="today-btn" id="today-btn">Today</button>` : ''}
+    </div>
     <button class="month-nav" id="next-month">›</button>
   </div>
 
@@ -1043,6 +1046,11 @@ async function mountDashboard() {
     let nm = m - 1, ny = y;
     if (nm < 1) { nm = 12; ny--; }
     state.currentMonth = `${ny}-${String(nm).padStart(2, '0')}`;
+    renderView();
+  });
+
+  document.getElementById('today-btn')?.addEventListener('click', () => {
+    state.currentMonth = today().slice(0, 7);
     renderView();
   });
 
@@ -1131,16 +1139,20 @@ function renderPieChart(expenses) {
   const data = sorted.map(([, v]) => v);
   const colors = sorted.map(([id]) => getCat(id).color);
 
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   state.chart = new Chart(ctx, {
     type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: 'transparent', hoverOffset: 8 }] },
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 3, borderColor: isDark ? '#271322' : '#ffffff', hoverOffset: 10 }] },
     options: {
       responsive: true,
       maintainAspectRatio: true,
-      cutout: '62%',
+      cutout: '65%',
       plugins: {
         legend: { display: false },
         tooltip: {
+          backgroundColor: isDark ? 'rgba(39,19,34,0.95)' : 'rgba(20,10,18,0.92)',
+          padding: 10,
+          cornerRadius: 10,
           callbacks: {
             label: ctx => ` ${fmt(ctx.raw)} (${((ctx.raw / ctx.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`
           }
@@ -1163,8 +1175,18 @@ function renderBarChart(expenses, month) {
   }
 
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-  const textColor = isDark ? '#8d8d93' : '#8e8e93';
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.35)';
+
+  const todayStr = today();
+  const isCurrentMonth = month === todayStr.slice(0, 7);
+  const todayDay = parseInt(todayStr.slice(8), 10);
+
+  const barColors = byDay.map((v, i) => {
+    if (isCurrentMonth && i + 1 === todayDay) return '#e8469a';
+    if (!v) return isDark ? 'rgba(232,70,154,0.13)' : 'rgba(232,70,154,0.1)';
+    return isDark ? 'rgba(244,114,182,0.65)' : 'rgba(232,70,154,0.6)';
+  });
 
   state.barChart = new Chart(ctx, {
     type: 'bar',
@@ -1172,19 +1194,22 @@ function renderBarChart(expenses, month) {
       labels: byDay.map((_, i) => i + 1),
       datasets: [{
         data: byDay,
-        backgroundColor: '#f472b6cc',
-        borderRadius: 4,
+        backgroundColor: barColors,
+        borderRadius: 5,
         borderSkipped: false,
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: {
+        backgroundColor: isDark ? 'rgba(39,19,34,0.95)' : 'rgba(20,10,18,0.92)',
+        padding: 10,
+        cornerRadius: 10,
         callbacks: { label: ctx => ` ${fmt(ctx.raw)}` }
       }},
       scales: {
-        x: { grid: { color: gridColor }, ticks: { color: textColor, maxTicksLimit: 10 } },
-        y: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) } }
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: textColor, maxTicksLimit: 10, font: { size: 10 } } },
+        y: { grid: { color: gridColor }, border: { display: false }, ticks: { color: textColor, callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v), font: { size: 10 } }, beginAtZero: true }
       }
     }
   });
@@ -1230,12 +1255,16 @@ async function renderBudgetVsActualChart(month) {
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: true, labels: { color: textColor, boxWidth: 12, padding: 10, font: { size: 11 } } },
-        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.raw)}` } }
+        legend: { display: true, labels: { color: textColor, boxWidth: 10, boxHeight: 10, borderRadius: 3, padding: 12, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: isDark ? 'rgba(39,19,34,0.95)' : 'rgba(20,10,18,0.92)',
+          padding: 10, cornerRadius: 10,
+          callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.raw)}` }
+        }
       },
       scales: {
-        x: { grid: { color: gridColor }, ticks: { color: textColor, maxRotation: 30 } },
-        y: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v) }, beginAtZero: true }
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: textColor, maxRotation: 30, font: { size: 11 } } },
+        y: { grid: { color: gridColor }, border: { display: false }, ticks: { color: textColor, callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v), font: { size: 10 } }, beginAtZero: true }
       }
     }
   });

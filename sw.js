@@ -1,4 +1,4 @@
-const CACHE = 'expense-tracker-v34';
+const CACHE = 'expense-tracker-v35';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './js/app.js',
   './js/db.js',
   './js/categories.js',
+  './js/audio.js',
   './lib/chart.umd.min.js',
   './icons/icon-180.png',
   './icons/icon-192.png',

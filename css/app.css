@@ -1388,11 +1388,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
   /* ── Settings ── */
   .view-settings { width: 100%; }
-  .settings-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px; align-items: start;
-  }
 
   /* ── Hover states ── */
   .btn-primary:hover { opacity: 0.92; }
@@ -1560,3 +1555,75 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   .txn-table-wrap { display: none !important; }
   #exp-list { display: block !important; }
 }
+
+/* ════════════════════════════════════════════════
+   INTERACTIVE ENHANCEMENTS
+   ════════════════════════════════════════════════ */
+
+/* ── Particles canvas ── */
+.view-dashboard { position: relative; isolation: isolate; }
+#particles-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── Add-expense burst ── */
+.add-burst-particle {
+  position: fixed;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 9998;
+  line-height: 1;
+}
+
+/* ── SFX toggle button ── */
+.sfx-toggle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text3);
+  opacity: 0.7;
+  z-index: 101;
+  line-height: 1;
+  transition: opacity 0.15s;
+}
+.sfx-toggle:hover { opacity: 1; }
+.bottom-nav { position: relative; }
+
+/* ── Custom cursor (desktop pointer:fine only) ── */
+#custom-cursor {
+  position: fixed;
+  top: 0; left: 0;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+.has-custom-cursor button,
+.has-custom-cursor .card,
+.has-custom-cursor .nav-item,
+.has-custom-cursor a,
+.has-custom-cursor input,
+.has-custom-cursor select,
+.has-custom-cursor .cat-pick,
+.has-custom-cursor .method-btn { cursor: none; }
+
+/* ── Settings grid → flex column ── */
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section { margin-bottom: 0; }

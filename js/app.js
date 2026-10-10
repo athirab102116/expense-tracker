@@ -1,5 +1,8 @@
 import { db } from './db.js';
 import { DEFAULT_CATEGORIES, DEFAULT_MERCHANT_RULES } from './categories.js';
+import { playAdd, playDelete, playNav, playBudgetWarn, toggleSound } from './audio.js';
+
+let _particlesRAF = null;
 
 // ─── State ──────────────────────────────────────────────────────────────────
 const state = {
@@ -812,6 +815,7 @@ async function handleURLParams() {
 // ─── Navigation ───────────────────────────────────────────────────────────────
 function setView(v) {
   state.view = v;
+  playNav();
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === v);
   });
@@ -820,8 +824,16 @@ function setView(v) {
 
 async function renderView() {
   const main = document.getElementById('main-content');
-  main.style.opacity = '0';
-  main.style.transform = 'translateY(6px)';
+  const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (_particlesRAF) { cancelAnimationFrame(_particlesRAF); _particlesRAF = null; }
+
+  if (!noMotion && window.gsap) {
+    await window.gsap.to(main, { opacity: 0, y: -16, duration: 0.15, ease: 'power2.in' });
+  } else {
+    main.style.opacity = '0';
+  }
+
   state.categories = await db.getAll('categories');
   switch (state.view) {
     case 'dashboard':    main.innerHTML = await renderDashboard(); mountDashboard(); break;
@@ -830,11 +842,147 @@ async function renderView() {
     case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
     case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
   }
-  requestAnimationFrame(() => {
-    main.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+
+  if (!noMotion && window.gsap) {
+    window.gsap.fromTo(main, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.2, ease: 'power2.out' });
+  } else {
     main.style.opacity = '1';
-    main.style.transform = 'translateY(0)';
-    setTimeout(() => { main.style.transition = ''; }, 200);
+    main.style.transform = '';
+  }
+
+  revealCards();
+  if (state.view === 'dashboard') initParticles();
+}
+
+// ─── Animation helpers ────────────────────────────────────────────────────────
+function revealCards() {
+  const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const cards = document.querySelectorAll('#main-content .card');
+  if (!cards.length) return;
+  if (noMotion || !window.gsap) {
+    cards.forEach(c => { c.style.opacity = '1'; c.style.transform = 'none'; });
+    return;
+  }
+  cards.forEach(c => { c.style.opacity = '0'; c.style.transform = 'translateY(24px)'; });
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const idx = [...cards].indexOf(entry.target);
+      window.gsap.to(entry.target, { opacity: 1, y: 0, duration: 0.35, ease: 'power2.out', delay: idx * 0.07 });
+      obs.unobserve(entry.target);
+    });
+  }, { threshold: 0.05 });
+  cards.forEach(c => obs.observe(c));
+}
+
+function initCardTilt() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!window.gsap || !window.matchMedia('(pointer: fine)').matches) return;
+  document.querySelectorAll('#main-content .card').forEach(card => {
+    card.addEventListener('pointermove', e => {
+      const r = card.getBoundingClientRect();
+      const dx = (e.clientX - r.left - r.width / 2) / (r.width / 2);
+      const dy = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+      window.gsap.to(card, { rotateX: -dy * 6, rotateY: dx * 6, duration: 0.2, ease: 'power2.out', transformPerspective: 1000 });
+    });
+    card.addEventListener('pointerleave', () => {
+      window.gsap.to(card, { rotateX: 0, rotateY: 0, duration: 0.5, ease: 'elastic.out(1,0.5)' });
+    });
+  });
+}
+
+function animateCountup(el, target) {
+  if (!el || !window.gsap || target <= 0) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const obj = { val: 0 };
+  window.gsap.to(obj, {
+    val: target, duration: 0.8, ease: 'power2.out',
+    onUpdate() { el.textContent = '₹' + Math.round(obj.val).toLocaleString('en-IN'); },
+  });
+}
+
+function triggerAddBurst(btn) {
+  if (!btn || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = btn.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  for (let i = 0; i < 6; i++) {
+    const el = document.createElement('span');
+    el.className = 'add-burst-particle';
+    el.textContent = '₹';
+    el.style.cssText = `left:${cx}px;top:${cy}px;`;
+    document.body.appendChild(el);
+    const angle = (i / 6) * Math.PI * 2;
+    const dist = 60 + Math.random() * 40;
+    el.animate([
+      { transform: `translate(-50%,-50%) translate(0,0) scale(0)`, opacity: 1 },
+      { transform: `translate(-50%,-50%) translate(${Math.cos(angle)*dist}px,${Math.sin(angle)*dist}px) scale(1.4)`, opacity: 0 },
+    ], { duration: 600, easing: 'cubic-bezier(0,0.9,0.57,1)', fill: 'forwards' })
+      .finished.then(() => el.remove());
+  }
+}
+
+function initParticles() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const dashView = document.querySelector('.view-dashboard');
+  if (!dashView) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'particles-canvas';
+  dashView.insertBefore(canvas, dashView.firstChild);
+  const W = window.innerWidth, H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const maxOp = isDark ? 0.13 : 0.08;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8469a';
+  const syms = ['₹', '$', '○'];
+  const pts = Array.from({ length: 18 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    sym: syms[Math.floor(Math.random() * 3)],
+    sz: 12 + Math.random() * 10,
+    spd: 0.3 + Math.random() * 0.5,
+    op: Math.random() * maxOp,
+    dir: Math.random() > 0.5 ? 1 : -1,
+  }));
+  const ctx2d = canvas.getContext('2d');
+  let last = 0;
+  function loop(ts) {
+    _particlesRAF = requestAnimationFrame(loop);
+    if (ts - last < 33) return; // ~30fps
+    last = ts;
+    ctx2d.clearRect(0, 0, W, H);
+    ctx2d.fillStyle = accent;
+    for (const p of pts) {
+      p.y -= p.spd;
+      p.op += p.dir * 0.002;
+      if (p.op >= maxOp) p.dir = -1;
+      if (p.op <= 0) { p.x = Math.random() * W; p.y = H + 20; p.op = 0; p.dir = 1; p.spd = 0.3 + Math.random() * 0.5; }
+      ctx2d.globalAlpha = Math.max(0, p.op);
+      ctx2d.font = `${p.sz}px sans-serif`;
+      ctx2d.fillText(p.sym, p.x, p.y);
+    }
+    ctx2d.globalAlpha = 1;
+  }
+  _particlesRAF = requestAnimationFrame(loop);
+}
+
+function initCustomCursor() {
+  if (!window.matchMedia('(pointer: fine)').matches) return;
+  document.body.classList.add('has-custom-cursor');
+  const cur = document.createElement('div');
+  cur.id = 'custom-cursor';
+  document.body.appendChild(cur);
+  document.addEventListener('mousemove', e => {
+    if (window.gsap) {
+      window.gsap.to(cur, { x: e.clientX, y: e.clientY, duration: 0.12, ease: 'power2.out' });
+    } else {
+      cur.style.transform = `translate(${e.clientX - 5}px,${e.clientY - 5}px)`;
+    }
+  });
+  const hoverSel = 'button, .card, .nav-item, a, input, select, .cat-pick, .method-btn';
+  document.addEventListener('mouseover', e => {
+    if (e.target.closest(hoverSel)) window.gsap?.to(cur, { scale: 2.2, duration: 0.2 });
+  });
+  document.addEventListener('mouseout', e => {
+    if (e.target.closest(hoverSel)) window.gsap?.to(cur, { scale: 1, duration: 0.2 });
   });
 }
 
@@ -1126,6 +1274,14 @@ async function mountDashboard() {
   if (!state.pictureMode && expenses.length > 0) renderPieChart(expenses);
   renderBarChart(expenses, month);
   await renderBudgetVsActualChart(month);
+
+  // Countup + tilt on dashboard
+  const totalEl = document.querySelector('.total-amount');
+  if (totalEl) {
+    const raw = parseFloat(totalEl.textContent.replace(/[^0-9.]/g, '')) || 0;
+    animateCountup(totalEl, raw);
+  }
+  initCardTilt();
 }
 
 function renderPieChart(expenses) {
@@ -1358,6 +1514,7 @@ function mountAddForm(modalMode = false) {
     if (confirm('Delete this expense?')) {
       await db.delete('expenses', state.editingExpense.id);
       gistSync();
+      playDelete();
       state.editingExpense = null;
       showToast('Deleted', 'success');
       if (modalMode) { closeAddModal(); renderView(); } else { setView('transactions'); }
@@ -1406,6 +1563,8 @@ function mountAddForm(modalMode = false) {
       await db.add('expenses', expense);
       if (merchant) await learnMerchant(merchant, selectedCat);
       gistSync();
+      playAdd();
+      triggerAddBurst(document.querySelector('#add-form [type="submit"]'));
       showToast('Expense added!');
       if (modalMode) {
         closeAddModal();
@@ -1718,6 +1877,7 @@ function mountTransactions() {
       if (confirm('Delete this expense?')) {
         await db.delete('expenses', id);
         gistSync();
+        playDelete();
         showToast('Deleted');
         renderView();
       }
@@ -1756,6 +1916,7 @@ function mountTransactions() {
       if (confirm('Delete this expense?')) {
         await db.delete('expenses', id);
         gistSync();
+        playDelete();
         showToast('Deleted');
         renderView();
       }
@@ -2067,6 +2228,10 @@ function mountBudgets() {
     if (e.target === e.currentTarget) closeModal('budget-modal');
   });
 
+  // Warn if any budget is ≥80%
+  const warnBars = document.querySelectorAll('#budget-list .progress-bar.warn, #budget-list .progress-bar.over, .overall-budget-card .progress-bar.warn, .overall-budget-card .progress-bar.over');
+  if (warnBars.length > 0) setTimeout(() => playBudgetWarn(), 400);
+
   document.getElementById('budget-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const catId = document.getElementById('b-cat').value;
@@ -2171,8 +2336,7 @@ async function renderSettings() {
   <!-- About -->
   <div class="settings-section card">
     <div class="settings-section-title">ℹ️ About</div>
-    <p class="hint-text">Expense Tracker PWA · All data stored on your device · No accounts · No servers</p>
-    <p class="hint-text">Version 1.0</p>
+    <p class="hint-text">Expense Tracker PWA v1.0 · Data stored on-device · No accounts</p>
   </div>
   </div><!-- /settings-grid -->
 </div>
@@ -2667,6 +2831,19 @@ async function init() {
 
   // Close modals on back gesture (popstate)
   window.addEventListener('popstate', closeAllModals);
+
+  // SFX toggle
+  const sfxBtn = document.getElementById('sfx-toggle');
+  if (sfxBtn) {
+    const updateSfxBtn = () => {
+      sfxBtn.textContent = localStorage.getItem('sfx') === 'false' ? '🔇' : '🔊';
+    };
+    updateSfxBtn();
+    sfxBtn.addEventListener('click', () => { toggleSound(); updateSfxBtn(); });
+  }
+
+  // Custom cursor (desktop / pointer:fine only)
+  initCustomCursor();
 
   // Initial render
   renderView();

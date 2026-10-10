@@ -726,8 +726,22 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   text-transform: uppercase; letter-spacing: 0.07em;
   margin-bottom: 12px; padding-left: 2px;
 }
-.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; gap: 12px; }
 .setting-row-stack { display: flex; flex-direction: column; gap: 8px; }
+/* Toggle switch */
+.toggle-switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; cursor: pointer;
+  background: var(--border); border-radius: 26px; transition: 0.2s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute;
+  width: 20px; height: 20px; left: 3px; bottom: 3px;
+  background: white; border-radius: 50%; transition: 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
 .hint-text { font-size: 13px; color: var(--text3); margin-bottom: 8px; line-height: 1.55; }
 
 /* Categories edit */

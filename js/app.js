@@ -137,6 +137,8 @@ async function learnMerchant(merchant, categoryId) {
 // Pending merchant memory: track uncertain merchants for 1 week
 async function recordPendingMerchant(merchant, categoryId) {
   if (!merchant) return;
+  const smartOn = await db.getSetting('smart_categorize', true);
+  if (!smartOn) return;
   const lower = merchant.toLowerCase();
   const pending = await db.getSetting('pending_merchants', {});
   const now = Date.now();
@@ -1914,7 +1916,6 @@ function mountBudgets() {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 async function renderSettings() {
-  const demoLoaded = await db.getSetting('demo_loaded', false);
   const githubToken = await db.getSetting('github_token', '');
   const gistId = await db.getSetting('github_gist_id', '');
   const lastGistSync = await db.getSetting('last_gist_sync', '');
@@ -1923,42 +1924,25 @@ async function renderSettings() {
   const gmailConnected = !!(gmailToken && Date.now() < gmailExpiry);
   const gmailLastSync = await db.getSetting('gmail_last_sync', null);
   const gmailStartDate = await db.getSetting('gmail_start_date', '2026-10-07');
-  const catRows = state.categories.map(c => `
-    <div class="setting-row cat-row-edit" data-id="${c.id}">
-      <span class="cat-emoji-lg">${c.emoji}</span>
-      <input type="text" class="cat-name-input field-input-sm" data-id="${c.id}" value="${c.name}">
-      <input type="text" class="cat-emoji-input field-input-sm" data-id="${c.id}" value="${c.emoji}" maxlength="2" style="width:48px;text-align:center">
-      <button class="btn-link danger cat-delete" data-id="${c.id}">✕</button>
-    </div>
-  `).join('');
-
-  const rules = await db.getAll('merchant_rules');
-  const ruleRows = rules.map(r => `
-    <div class="rule-row" data-id="${r.id}">
-      <input type="text" class="field-input-sm rule-kw" value="${r.keyword}" data-id="${r.id}">
-      <span>→</span>
-      <select class="field-input-sm rule-cat" data-id="${r.id}">
-        ${state.categories.map(c => `<option value="${c.id}" ${r.categoryId === c.id ? 'selected' : ''}>${c.emoji} ${c.name}</option>`).join('')}
-      </select>
-      <button class="btn-link danger rule-delete" data-id="${r.id}">✕</button>
-    </div>
-  `).join('');
+  const smartCat = await db.getSetting('smart_categorize', true);
 
   return `
 <div class="view-settings">
   <h2 class="view-title">Settings</h2>
   <div class="settings-grid">
 
-  <!-- Demo data -->
+  <!-- Smart Categorization -->
   <div class="settings-section card">
-    <div class="settings-section-title">🎭 Demo Data</div>
+    <div class="settings-section-title">🧠 Smart Categorization</div>
     <div class="setting-row">
-      <span>Sample data for preview</span>
-      <div class="btn-group">
-        ${demoLoaded
-          ? '<button class="btn-secondary-sm" id="clear-demo">Clear Demo</button>'
-          : '<button class="btn-secondary-sm" id="load-demo">Load Demo</button>'}
+      <div>
+        <div style="font-weight:600;margin-bottom:2px">Learn from my choices</div>
+        <div class="hint-text">When you pick a category for a merchant, the app remembers it for next time.</div>
       </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="smart-cat-toggle" ${smartCat ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
     </div>
   </div>
 
@@ -1983,105 +1967,6 @@ async function renderSettings() {
         'Not set up yet'
       }</span>
       ${gistId ? `<button class="btn-link danger" id="gist-disconnect" style="font-size:12px">Disconnect</button>` : ''}
-    </div>
-  </div>
-
-  <!-- Export/Import -->
-  <div class="settings-section card">
-    <div class="settings-section-title">📂 Export / Import</div>
-    <div class="setting-row" style="margin-bottom:8px">
-      <span style="font-size:13px;color:var(--text-secondary)" id="last-backup-label">${
-        (await db.getSetting('last_backup'))
-          ? `Last backup: ${await db.getSetting('last_backup')}`
-          : 'No backup yet — back up regularly to protect against iOS data loss'
-      }</span>
-    </div>
-    <div class="setting-row-stack">
-      <button class="btn-secondary" id="export-csv">Export CSV</button>
-      <button class="btn-primary" id="export-json">Backup JSON</button>
-      <button class="btn-secondary" id="import-json">Restore from backup</button>
-      <input type="file" id="import-file" accept=".json" class="hidden">
-    </div>
-  </div>
-
-  <!-- Categories -->
-  <div class="settings-section card">
-    <div class="settings-section-title" style="display:flex;justify-content:space-between;align-items:center">
-      <span>🏷️ Categories</span>
-      <button class="btn-add-cat" id="add-cat-btn">＋ New</button>
-    </div>
-    <div id="cat-list-edit">${catRows}</div>
-    <button class="btn-secondary" id="save-cats" style="margin-top:4px">Save Changes</button>
-  </div>
-
-  <!-- Add / Edit Category Modal -->
-  <div class="modal" id="new-cat-modal">
-    <div class="modal-sheet">
-      <div class="modal-handle"></div>
-      <div class="modal-title">✨ New Category</div>
-
-      <label class="field-label">Name</label>
-      <input type="text" id="nc-name" placeholder="e.g. Coffee, Petrol, Gifts…" class="field-input" autocomplete="off">
-
-      <label class="field-label">Emoji — tap one or type your own</label>
-      <div class="emoji-presets">
-        ${['☕','🧃','🍕','🍜','🥗','🛵','⛽','🏥','💇','🐾','👗','💄','🎁','🎉','🏋️','📖','🎸','✈️','🏠','💡','🧹','🐶','🌸','💅','🍰','🎀','🛍️','🪴','🏖️','🎬'].map(e =>
-          `<button type="button" class="emoji-preset-btn" data-emoji="${e}">${e}</button>`
-        ).join('')}
-      </div>
-      <input type="text" id="nc-emoji" placeholder="☕" class="field-input emoji-solo" maxlength="2">
-
-      <label class="field-label">Colour</label>
-      <div class="color-swatches">
-        ${['#FF6B6B','#FF8FAB','#FFB3D0','#F9A8D4','#E879F9','#A78BFA','#818CF8','#60A5FA','#34D399','#86EFAC','#FCD34D','#FB923C','#F87171','#94A3B8','#C084FC','#F472B6'].map(c =>
-          `<button type="button" class="color-swatch" data-color="${c}" style="background:${c}"></button>`
-        ).join('')}
-      </div>
-      <input type="hidden" id="nc-color" value="#F472B6">
-
-      <button type="button" class="btn-primary" id="nc-save">Add Category</button>
-      <button type="button" class="btn-secondary" id="nc-cancel">Cancel</button>
-    </div>
-  </div>
-
-  <!-- Merchant Rules -->
-  <div class="settings-section card">
-    <div class="settings-section-title">🤖 Auto-categorize Rules</div>
-    <p class="hint-text">Keywords matched against merchant names (case-insensitive)</p>
-    <div id="rule-list">${ruleRows}</div>
-    <button class="btn-link" id="add-rule-btn" style="margin-top:8px">+ Add Rule</button>
-    <button class="btn-secondary" id="save-rules" style="margin-top:8px">Save Rules</button>
-  </div>
-
-  <!-- iOS Shortcuts / Automation -->
-  <div class="settings-section card" id="automation-guide">
-    <div class="settings-section-title">📱 iOS Shortcuts Automation</div>
-    <div class="automation-content">
-      <p>Track expenses <strong>automatically</strong> when you make a UPI/card payment, without opening this app.</p>
-
-      <h4>Option A – SMS Trigger (most reliable)</h4>
-      <p>Every time your bank sends a debit SMS, a Shortcut can open this app with the amount pre-filled.</p>
-      <ol>
-        <li>Open the <strong>Shortcuts</strong> app → tap <strong>Automation</strong> tab → tap <strong>+</strong></li>
-        <li>Choose <strong>Personal Automation</strong> → scroll to <strong>Message</strong></li>
-        <li>Set <em>Message Contains</em> to <code>debited</code> → tap Next</li>
-        <li>Add action: <strong>Get variable</strong> → pick <em>Shortcut Input → Message Content</em></li>
-        <li>Add action: <strong>URL</strong> → paste:<br>
-          <code class="code-block">${location.origin}${location.pathname}?add=1&amp;amount=[amount]&amp;merchant=[merchant]&amp;method=UPI</code>
-        </li>
-        <li>Add action: <strong>Open URLs</strong></li>
-        <li>Turn off <em>"Ask Before Running"</em> if you want it silent</li>
-      </ol>
-      <div class="note-box">⚠️ iOS may ask for a tap to confirm on first run. This is an Apple security requirement and cannot be bypassed.</div>
-
-      <h4>Option B – URL Scheme (manual, instant)</h4>
-      <p>Add a widget to your Home Screen with a button that opens the app. Works 100% reliably.</p>
-      <p>Share this URL with yourself and bookmark it in Safari:</p>
-      <code class="code-block">${location.origin}${location.pathname}?add=1&amp;amount=0&amp;merchant=&amp;method=UPI</code>
-
-      <h4>URL Format Reference</h4>
-      <code class="code-block">?add=1&amp;amount=250&amp;merchant=Swiggy&amp;method=UPI&amp;note=Lunch</code>
-      <p>Supported methods: <code>UPI</code>, <code>Card</code>, <code>Cash</code></p>
     </div>
   </div>
 
@@ -2141,6 +2026,12 @@ async function renderSettings() {
 }
 
 function mountSettings() {
+  // Smart categorization toggle
+  document.getElementById('smart-cat-toggle')?.addEventListener('change', async e => {
+    await db.setSetting('smart_categorize', e.target.checked);
+    showToast(e.target.checked ? 'Smart categorization on' : 'Smart categorization off');
+  });
+
   // Gmail start date
   document.getElementById('gmail-start-date-input')?.addEventListener('change', async e => {
     const val = e.target.value;
@@ -2165,7 +2056,6 @@ function mountSettings() {
     const el = document.getElementById('gist-sync-status');
     if (el) el.textContent = '⏳ Syncing…';
     await gistSync();
-    // Refresh settings to show Gist ID
     setTimeout(() => renderView(), 1500);
   });
 
@@ -2186,167 +2076,6 @@ function mountSettings() {
     await db.setSetting('last_gist_sync', '');
     showToast('Disconnected');
     renderView();
-  });
-
-  // Demo data
-  document.getElementById('load-demo')?.addEventListener('click', loadDemoData);
-  document.getElementById('clear-demo')?.addEventListener('click', clearDemoData);
-
-  // Export CSV
-  document.getElementById('export-csv')?.addEventListener('click', async () => {
-    const expenses = await db.getAll('expenses');
-    if (!expenses.length) return showToast('No expenses to export', 'error');
-    const header = 'Date,Amount,Category,Merchant,Note,Method\n';
-    const rows = expenses.map(e => [e.date, e.amount, getCat(e.category).name, `"${(e.merchant||'').replace(/"/g,'""')}"`, `"${(e.note||'').replace(/"/g,'""')}"`, e.method].join(','));
-    const csv = header + rows.join('\n');
-    downloadFile(csv, `expenses-${today()}.csv`, 'text/csv');
-    showToast('CSV exported!');
-  });
-
-  // Export JSON
-  document.getElementById('export-json')?.addEventListener('click', async () => {
-    const expenses = await db.getAll('expenses');
-    const cats = await db.getAll('categories');
-    const budgets = await db.getAll('budgets');
-    const payload = { version: 1, exportDate: today(), expenses, categories: cats, budgets };
-    downloadFile(JSON.stringify(payload, null, 2), `expenses-${today()}.json`, 'application/json');
-    await db.setSetting('last_backup', today());
-    showToast('JSON exported! Save it to Files or iCloud.');
-    const lbl = document.getElementById('last-backup-label');
-    if (lbl) lbl.textContent = `Last backup: ${today()}`;
-  });
-
-  // Import JSON
-  document.getElementById('import-json')?.addEventListener('click', () => {
-    document.getElementById('import-file').click();
-  });
-
-  document.getElementById('import-file')?.addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!data.expenses) throw new Error('Invalid file format');
-      if (!confirm(`Import ${data.expenses.length} expenses? This will add to your existing data.`)) return;
-      for (const exp of data.expenses) {
-        const { id, ...rest } = exp;
-        await db.add('expenses', rest);
-      }
-      if (data.categories?.length) {
-        for (const cat of data.categories) await db.put('categories', cat);
-      }
-      if (data.budgets?.length) {
-        for (const b of data.budgets) await db.put('budgets', b);
-      }
-      showToast(`Imported ${data.expenses.length} expenses!`);
-      renderView();
-    } catch (err) {
-      showToast('Import failed: ' + err.message, 'error');
-    }
-    e.target.value = '';
-  });
-
-  // Save categories
-  document.getElementById('save-cats')?.addEventListener('click', async () => {
-    const inputs = document.querySelectorAll('.cat-name-input');
-    for (const inp of inputs) {
-      const id = inp.dataset.id;
-      const cat = state.categories.find(c => c.id === id);
-      if (!cat) continue;
-      const emojiInp = document.querySelector(`.cat-emoji-input[data-id="${id}"]`);
-      cat.name = inp.value.trim() || cat.name;
-      cat.emoji = emojiInp?.value.trim() || cat.emoji;
-      await db.put('categories', cat);
-    }
-    state.categories = await db.getAll('categories');
-    showToast('Categories saved!');
-  });
-
-  // Delete category
-  document.querySelectorAll('.cat-delete').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      if (!confirm(`Delete category "${getCat(id).name}"?`)) return;
-      await db.delete('categories', id);
-      state.categories = await db.getAll('categories');
-      renderView();
-    });
-  });
-
-  // Add category — open proper modal
-  document.getElementById('add-cat-btn')?.addEventListener('click', () => {
-    document.getElementById('nc-name').value = '';
-    document.getElementById('nc-emoji').value = '';
-    document.getElementById('nc-color').value = '#F472B6';
-    document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('selected', s.dataset.color === '#F472B6'));
-    openModal('new-cat-modal');
-    setTimeout(() => document.getElementById('nc-name').focus(), 300);
-  });
-
-  // Emoji preset tap
-  document.querySelectorAll('.emoji-preset-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.getElementById('nc-emoji').value = btn.dataset.emoji;
-      document.querySelectorAll('.emoji-preset-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-    });
-  });
-
-  // Colour swatch tap
-  document.querySelectorAll('.color-swatch').forEach(sw => {
-    sw.addEventListener('click', () => {
-      document.getElementById('nc-color').value = sw.dataset.color;
-      document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-      sw.classList.add('selected');
-    });
-  });
-
-  document.getElementById('nc-cancel')?.addEventListener('click', () => closeModal('new-cat-modal'));
-  document.getElementById('new-cat-modal')?.addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeModal('new-cat-modal');
-  });
-
-  document.getElementById('nc-save')?.addEventListener('click', async () => {
-    const name = document.getElementById('nc-name').value.trim();
-    if (!name) return showToast('Enter a category name', 'error');
-    const emoji = document.getElementById('nc-emoji').value.trim() || '📌';
-    const color = document.getElementById('nc-color').value || '#F472B6';
-    const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now().toString(36);
-    await db.put('categories', { id, name, emoji, color });
-    state.categories = await db.getAll('categories');
-    closeModal('new-cat-modal');
-    showToast(`${emoji} ${name} added!`);
-    renderView();
-  });
-
-  // Save rules
-  document.getElementById('save-rules')?.addEventListener('click', async () => {
-    const rows = document.querySelectorAll('.rule-row');
-    for (const row of rows) {
-      const id = parseInt(row.dataset.id);
-      const kw = row.querySelector('.rule-kw').value.trim().toLowerCase();
-      const cat = row.querySelector('.rule-cat').value;
-      if (kw && cat) await db.put('merchant_rules', { id, keyword: kw, categoryId: cat });
-    }
-    state.merchantRules = await db.getAll('merchant_rules');
-    showToast('Rules saved!');
-  });
-
-  // Add rule
-  document.getElementById('add-rule-btn')?.addEventListener('click', async () => {
-    const kw = prompt('Merchant keyword (e.g. "swiggy"):');
-    if (!kw) return;
-    await db.add('merchant_rules', { keyword: kw.toLowerCase(), categoryId: 'other' });
-    renderView();
-  });
-
-  // Delete rule
-  document.querySelectorAll('.rule-delete').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await db.delete('merchant_rules', parseInt(btn.dataset.id));
-      renderView();
-    });
   });
 }
 

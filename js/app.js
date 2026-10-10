@@ -824,23 +824,30 @@ function setView(v) {
 
 async function renderView() {
   const main = document.getElementById('main-content');
+  if (!main) return;
   const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   if (_particlesRAF) { cancelAnimationFrame(_particlesRAF); _particlesRAF = null; }
 
   if (!noMotion && window.gsap) {
-    await window.gsap.to(main, { opacity: 0, y: -16, duration: 0.15, ease: 'power2.in' });
+    window.gsap.to(main, { opacity: 0, y: -16, duration: 0.15, ease: 'power2.in' });
+    await new Promise(r => setTimeout(r, 160));
   } else {
     main.style.opacity = '0';
   }
 
-  state.categories = await db.getAll('categories');
-  switch (state.view) {
-    case 'dashboard':    main.innerHTML = await renderDashboard(); mountDashboard(); break;
-    case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
-    case 'transactions': main.innerHTML = await renderTransactions(); mountTransactions(); break;
-    case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
-    case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
+  try {
+    state.categories = await db.getAll('categories');
+    switch (state.view) {
+      case 'dashboard':    main.innerHTML = await renderDashboard(); mountDashboard(); break;
+      case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
+      case 'transactions': main.innerHTML = await renderTransactions(); mountTransactions(); break;
+      case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
+      case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
+    }
+  } catch (err) {
+    console.error('renderView error:', err);
+    main.innerHTML = `<div class="empty-state" style="padding-top:80px"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div>${err.message}</div></div>`;
   }
 
   if (!noMotion && window.gsap) {

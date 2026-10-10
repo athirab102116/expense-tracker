@@ -1823,7 +1823,65 @@ async function renderBudgets() {
   const catTotalPct = catTotalBudget > 0 ? Math.min((totalSpent / catTotalBudget) * 100, 100) : 0;
   const catOverallStatus = catTotalPct >= 100 ? 'over' : catTotalPct >= 80 ? 'warn' : 'ok';
 
-  const totalSummary = monthBudgets.length > 0 ? `
+  // Allocation breakdown card (only when overall budget is set)
+  let allocationCard = '';
+  if (overallBudget > 0) {
+    const unallocated = overallBudget - catTotalBudget;
+    const allocPct = Math.min((catTotalBudget / overallBudget) * 100, 100);
+    const isOverAllocated = catTotalBudget > overallBudget;
+
+    // Segmented bar: each category gets a coloured slice
+    const segments = monthBudgets.map(b => {
+      const cat = getCat(b.categoryId);
+      const w = ((b.amount / overallBudget) * 100).toFixed(2);
+      return `<div class="alloc-segment" style="width:${w}%;background:${cat.color}" title="${cat.name}: ${fmt(b.amount)}"></div>`;
+    }).join('');
+
+    // Legend rows
+    const legendRows = monthBudgets.map(b => {
+      const cat = getCat(b.categoryId);
+      const pct = ((b.amount / overallBudget) * 100).toFixed(1);
+      return `<div class="alloc-legend-row">
+        <span class="alloc-legend-dot" style="background:${cat.color}"></span>
+        <span class="alloc-legend-name">${cat.emoji} ${cat.name}</span>
+        <span class="alloc-legend-pct">${pct}%</span>
+        <span class="alloc-legend-amt">${fmt(b.amount)}</span>
+      </div>`;
+    }).join('');
+
+    allocationCard = `
+    <div class="alloc-card card">
+      <div class="alloc-header">
+        <span class="alloc-title">Budget Allocation</span>
+        <span class="alloc-pct-label">${allocPct.toFixed(0)}% planned</span>
+      </div>
+
+      <div class="alloc-bar-track">
+        ${segments}
+        ${!isOverAllocated && unallocated > 0
+          ? `<div class="alloc-segment alloc-unallocated" style="width:${(100 - allocPct).toFixed(2)}%" title="Unallocated"></div>`
+          : ''}
+      </div>
+
+      <div class="alloc-summary">
+        <div class="alloc-summary-col">
+          <div class="alloc-summary-label">Budgeted</div>
+          <div class="alloc-summary-val">${fmt(catTotalBudget)}</div>
+        </div>
+        <div class="alloc-summary-divider"></div>
+        <div class="alloc-summary-col alloc-summary-col-right ${isOverAllocated ? 'alloc-over' : ''}">
+          <div class="alloc-summary-label">${isOverAllocated ? '⚠️ Over by' : 'Unallocated'}</div>
+          <div class="alloc-summary-val ${isOverAllocated ? 'danger-text' : ''}">${fmt(Math.abs(unallocated))}</div>
+          ${!isOverAllocated && unallocated > 0 ? `<div class="alloc-hint">available to budget</div>` : ''}
+          ${isOverAllocated ? `<div class="alloc-hint" style="color:var(--danger)">reduce category totals</div>` : ''}
+        </div>
+      </div>
+
+      ${monthBudgets.length > 0 ? `<div class="alloc-legend">${legendRows}</div>` : ''}
+    </div>`;
+  }
+
+  const totalSummary = monthBudgets.length > 0 && overallBudget === 0 ? `
   <div class="budget-total-card card">
     <div class="budget-total-row">
       <div class="budget-total-col">
@@ -1884,6 +1942,7 @@ async function renderBudgets() {
     <button class="btn-icon" id="add-budget">＋</button>
   </div>
   ${overallCard}
+  ${allocationCard}
   ${monthBudgets.length > 0 ? `<div class="budget-section-label">By category</div>` : ''}
   ${totalSummary}
   <div id="budget-list">${budgetRows}</div>

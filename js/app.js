@@ -1350,6 +1350,16 @@ function renderPieChart(expenses) {
   const c2d = canvas.getContext('2d');
   c2d.scale(dpr, dpr);
 
+  // Polyfill c2d.ellipse for browsers that don't support it
+  if (!c2d.ellipse) {
+    c2d.ellipse = function(x, y, rx, ry, rot, start, end, ccw) {
+      this.save();
+      this.translate(x, y); this.rotate(rot); this.scale(rx, ry);
+      this.arc(0, 0, 1, start, end, ccw);
+      this.restore();
+    };
+  }
+
   // ── 3D geometry ──────────────────────────────────────────────────────────────
   const RX    = SIZE * 0.42;           // x-radius of top ellipse
   const RY    = RX  * 0.38;           // y-radius (perspective squish)
@@ -1463,7 +1473,12 @@ function renderPieChart(expenses) {
       c2d.lineTo(cx + RX*Math.cos(visStart), botCY + RY*Math.sin(visStart));
       c2d.ellipse(cx, botCY, RX, RY, 0, visStart, visEnd);
       c2d.lineTo(cx + RX*Math.cos(visEnd), topCY + RY*Math.sin(visEnd));
-      c2d.ellipse(cx, topCY, RX, RY, 0, visEnd, visStart, true);
+      // Trace top-face arc back from visEnd→visStart as polygon (avoids anticlockwise ellipse Safari bug)
+      const rimSteps = Math.max(4, Math.ceil((visEnd - visStart) / (Math.PI / 10)));
+      for (let _r = 1; _r <= rimSteps; _r++) {
+        const _a = visEnd - (visEnd - visStart) * _r / rimSteps;
+        c2d.lineTo(cx + RX * Math.cos(_a), topCY + RY * Math.sin(_a));
+      }
       c2d.closePath();
 
       const g1 = c2d.createLinearGradient(cx, topCY, cx, botCY + 2);

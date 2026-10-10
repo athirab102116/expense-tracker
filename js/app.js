@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { DEFAULT_CATEGORIES, DEFAULT_MERCHANT_RULES } from './categories.js';
-import { playAdd, playDelete, playNav, playBudgetWarn, toggleSound } from './audio.js';
+import { playAdd, playDelete, playNav, playBudgetWarn, toggleSound, playCategorySound } from './audio.js';
 
 let _particlesRAF = null;
 
@@ -693,6 +693,14 @@ async function bootstrap() {
   const cats = await db.getAll('categories');
   if (cats.length === 0) {
     for (const c of DEFAULT_CATEGORIES) await db.put('categories', c);
+  } else {
+    // Migrate colors for default categories to keep them up-to-date
+    for (const def of DEFAULT_CATEGORIES) {
+      const existing = cats.find(c => c.id === def.id);
+      if (existing && existing.color !== def.color) {
+        await db.put('categories', { ...existing, color: def.color });
+      }
+    }
   }
   const rules = await db.getAll('merchant_rules');
   if (rules.length === 0) {
@@ -1293,39 +1301,206 @@ async function mountDashboard() {
 }
 
 function renderPieChart(expenses) {
-  const ctx = document.getElementById('pieChart');
-  if (!ctx) return;
+  const canvas = document.getElementById('pieChart');
+  if (!canvas) return;
   if (state.chart) { state.chart.destroy(); state.chart = null; }
 
   const byCat = {};
   for (const e of expenses) byCat[e.category] = (byCat[e.category] || 0) + e.amount;
+  const entries = Object.entries(byCat);
+  if (!entries.length) return;
 
-  const sorted = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
-  const labels = sorted.map(([id]) => getCat(id).name);
-  const data = sorted.map(([, v]) => v);
-  const colors = sorted.map(([id]) => getCat(id).color);
+  const total = entries.reduce((s, [, v]) => s + v, 0);
 
-  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  state.chart = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 3, borderColor: isDark ? '#25221a' : '#fffdf6', hoverOffset: 10 }] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      cutout: '65%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: isDark ? 'rgba(39,19,34,0.95)' : 'rgba(20,10,18,0.92)',
-          padding: 10,
-          cornerRadius: 10,
-          callbacks: {
-            label: ctx => ` ${fmt(ctx.raw)} (${((ctx.raw / ctx.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`
-          }
+  // Sort descending
+  let sliceArr = entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, val]) => ({ id, val, cat: getCat(id), pct: val / total }));
+
+  // Swap adjacent similar-hue slices so contrasting colors sit next to each other
+  function hexHue(hex) {
+    const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+    if (!d) return 0;
+    let h = max === r ? (g-b)/d + (g<b?6:0) : max === g ? (b-r)/d+2 : (r-g)/d+4;
+    return h * 60;
+  }
+  function hueDist(h1, h2) { const d = Math.abs(h1 - h2); return Math.min(d, 360 - d); }
+  for (let i = 0; i < sliceArr.length - 1; i++) {
+    const d = hueDist(hexHue(sliceArr[i].cat.color), hexHue(sliceArr[i+1].cat.color));
+    if (d < 40) {
+      for (let j = i+2; j < sliceArr.length; j++) {
+        if (hueDist(hexHue(sliceArr[i].cat.color), hexHue(sliceArr[j].cat.color)) >= 40) {
+          [sliceArr[i+1], sliceArr[j]] = [sliceArr[j], sliceArr[i+1]]; break;
         }
       }
     }
-  });
+  }
+
+  const dpr = window.devicePixelRatio || 1;
+  const SIZE = Math.min(canvas.parentElement?.offsetWidth || 220, 220);
+  canvas.width = SIZE * dpr;
+  canvas.height = SIZE * dpr;
+  canvas.style.width  = SIZE + 'px';
+  canvas.style.height = SIZE + 'px';
+
+  const c2d = canvas.getContext('2d');
+  c2d.scale(dpr, dpr);
+
+  const cx = SIZE / 2, cy = SIZE / 2, R = SIZE / 2 - 10;
+
+  // Pre-compute slice angles
+  const slices = [];
+  let ang = -Math.PI / 2;
+  for (const s of sliceArr) {
+    const sweep = s.pct * Math.PI * 2;
+    slices.push({ ...s, startAngle: ang, endAngle: ang + sweep, midAngle: ang + sweep / 2 });
+    ang += sweep;
+  }
+
+  const isDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const borderCol = () => isDark() ? '#1e0535' : '#f0e6ff';
+
+  let activeIdx = -1;
+  let particles = [];
+  const cleanup = { raf: null, praf: null, destroy() {
+    if (cleanup.raf) cancelAnimationFrame(cleanup.raf);
+    if (cleanup.praf) cancelAnimationFrame(cleanup.praf);
+    document.getElementById('pie-slice-label')?.remove();
+    canvas.removeEventListener('click', onTap);
+    canvas.removeEventListener('touchstart', onTap);
+  }};
+  state.chart = cleanup;
+
+  function draw(progress) {
+    c2d.clearRect(0, 0, SIZE, SIZE);
+
+    // Glow shadow behind pie
+    c2d.save();
+    c2d.shadowColor = 'rgba(168,85,247,0.40)';
+    c2d.shadowBlur = 22;
+    c2d.beginPath(); c2d.arc(cx, cy, R + 1, 0, Math.PI * 2);
+    c2d.fillStyle = isDark() ? '#1e0535' : '#ede0ff';
+    c2d.fill();
+    c2d.restore();
+
+    // Draw slices up to current sweep progress (clockwise from 12 o'clock)
+    const progressAngle = -Math.PI / 2 + progress * Math.PI * 2;
+    for (let i = 0; i < slices.length; i++) {
+      const s = slices[i];
+      const clampedEnd = Math.min(s.endAngle, progressAngle);
+      if (clampedEnd <= s.startAngle) continue;
+      const pop = i === activeIdx;
+      const ox = pop ? 9 * Math.cos(s.midAngle) : 0;
+      const oy = pop ? 9 * Math.sin(s.midAngle) : 0;
+      c2d.save();
+      c2d.beginPath();
+      c2d.moveTo(cx + ox, cy + oy);
+      c2d.arc(cx + ox, cy + oy, R, s.startAngle, clampedEnd);
+      c2d.closePath();
+      c2d.fillStyle = s.cat.color;
+      c2d.fill();
+      c2d.strokeStyle = borderCol();
+      c2d.lineWidth = 2.5;
+      c2d.stroke();
+      c2d.restore();
+    }
+
+    // Draw sparkle particles
+    for (const p of particles) {
+      c2d.save();
+      c2d.globalAlpha = Math.max(0, p.life);
+      c2d.fillStyle = p.color;
+      c2d.beginPath();
+      c2d.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2);
+      c2d.fill();
+      c2d.restore();
+    }
+
+    // Subtle ambient sparkles on first load (fade in with progress)
+    if (progress < 1) return;
+  }
+
+  // Sweep-in intro animation
+  let startTs = null;
+  const ANIM_MS = 720;
+  function introFrame(ts) {
+    if (!startTs) startTs = ts;
+    const t = Math.min((ts - startTs) / ANIM_MS, 1);
+    const ease = 1 - Math.pow(1 - t, 2.8);
+    draw(ease);
+    if (t < 1) cleanup.raf = requestAnimationFrame(introFrame);
+    else cleanup.raf = null;
+  }
+  cleanup.raf = requestAnimationFrame(introFrame);
+
+  // Particle animation loop
+  function tickParticles() {
+    if (!particles.length) { cleanup.praf = null; return; }
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life -= 0.042; }
+    particles = particles.filter(p => p.life > 0);
+    draw(1);
+    cleanup.praf = requestAnimationFrame(tickParticles);
+  }
+
+  // Hit test: returns slice index or -1
+  function hitTest(x, y) {
+    const dx = x - cx, dy = y - cy;
+    if (dx*dx + dy*dy > R*R) return -1;
+    let a = Math.atan2(dy, dx);
+    if (a < -Math.PI / 2) a += Math.PI * 2;
+    for (let i = 0; i < slices.length; i++) {
+      if (a >= slices[i].startAngle && a < slices[i].endAngle) return i;
+    }
+    return slices.length - 1; // edge case: wrap
+  }
+
+  function showPieLabel(s) {
+    document.getElementById('pie-slice-label')?.remove();
+    const wrap = canvas.parentElement;
+    wrap.style.position = 'relative';
+    const el = document.createElement('div');
+    el.id = 'pie-slice-label';
+    el.className = 'pie-slice-label';
+    el.innerHTML = `<div class="psl-cat">${s.cat.emoji} ${s.cat.name}</div>
+      <div class="psl-amt">${fmt(s.val)}</div>
+      <div class="psl-pct">${(s.pct * 100).toFixed(1)}%</div>`;
+    el.style.borderColor = s.cat.color + '66';
+    wrap.appendChild(el);
+    setTimeout(() => el?.classList.add('psl-visible'), 10);
+    if (el._dismiss) clearTimeout(el._dismiss);
+    el._dismiss = setTimeout(() => { el?.classList.remove('psl-visible'); setTimeout(() => el?.remove(), 200); }, 2800);
+  }
+
+  function onTap(e) {
+    if (e.type === 'touchstart') e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const src = e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
+    const x = (src.clientX - rect.left) / rect.width * SIZE;
+    const y = (src.clientY - rect.top) / rect.height * SIZE;
+    const idx = hitTest(x, y);
+    if (idx === -1) { activeIdx = -1; draw(1); return; }
+
+    activeIdx = idx;
+    const s = slices[idx];
+    playCategorySound(s.id);
+
+    // Sparkle burst from slice center
+    if (cleanup.praf) cancelAnimationFrame(cleanup.praf);
+    const bx = cx + R * 0.62 * Math.cos(s.midAngle);
+    const by = cy + R * 0.62 * Math.sin(s.midAngle);
+    particles = Array.from({ length: 10 }, () => {
+      const a = Math.random() * Math.PI * 2, sp = 1.8 + Math.random() * 2.8;
+      return { x: bx, y: by, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, r: 3 + Math.random()*2.5, life: 1, color: s.cat.color };
+    });
+    cleanup.praf = requestAnimationFrame(tickParticles);
+
+    showPieLabel(s);
+    draw(1);
+  }
+
+  canvas.addEventListener('click', onTap);
+  canvas.addEventListener('touchstart', onTap, { passive: false });
 }
 
 function renderBarChart(expenses, month) {
@@ -1873,7 +2048,7 @@ function mountTransactions() {
       if (e.target.classList.contains('delete-btn')) return;
       const id = parseInt(el.dataset.id);
       const expense = await db.get('expenses', id);
-      if (expense) openAddModal(expense);
+      if (expense) { playCategorySound(expense.category); openAddModal(expense); }
     });
   });
 
@@ -1912,7 +2087,7 @@ function mountTransactions() {
       if (e.target.closest('.txn-delete-btn')) return;
       const id = parseInt(row.dataset.id);
       const expense = await db.get('expenses', id);
-      if (expense) openAddModal(expense);
+      if (expense) { playCategorySound(expense.category); openAddModal(expense); }
     });
   });
 
@@ -2341,6 +2516,21 @@ async function renderSettings() {
     <button class="btn-add-cat" id="open-add-cat-btn" style="margin-top:14px;width:100%;padding:10px;border-radius:var(--radius-sm)">＋ Add Category</button>
   </div>
 
+  <!-- Sound Effects -->
+  <div class="settings-section card">
+    <div class="settings-section-title">🔊 Sound Effects</div>
+    <div class="setting-row">
+      <div>
+        <div style="font-weight:600;margin-bottom:2px">Fairy chime sounds</div>
+        <div class="hint-text">Play sounds on actions and category taps.</div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="sfx-setting-toggle" ${localStorage.getItem('sfx') !== 'false' ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
   <!-- About -->
   <div class="settings-section card">
     <div class="settings-section-title">ℹ️ About</div>
@@ -2372,6 +2562,13 @@ function mountSettings() {
     await db.setSetting('gmail_token_expiry', 0);
     showToast('Gmail disconnected');
     renderView();
+  });
+
+  // Sound toggle in settings
+  document.getElementById('sfx-setting-toggle')?.addEventListener('change', e => {
+    localStorage.setItem('sfx', String(e.target.checked));
+    const btn = document.getElementById('sfx-toggle');
+    if (btn) btn.textContent = e.target.checked ? '🔊' : '🔇';
   });
 
   // Open add-category modal

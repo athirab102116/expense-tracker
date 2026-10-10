@@ -17,6 +17,8 @@ const state = {
   storagePersisted: null,    // null=unknown, true=safe, false=at-risk
   sortCol: 'date',
   sortDir: 'desc',
+  gmailSyncResult: null,
+  gmailPendingImport: [],
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -401,36 +403,81 @@ async function getGmailToken() {
   return token;
 }
 
+function stripHtmlTags(html) {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function extractEmailText(payload) {
-  if (payload.mimeType === 'text/plain' && payload.body?.data) {
-    try { return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/')); } catch { return ''; }
+  const decode = data => {
+    try { return atob(data.replace(/-/g, '+').replace(/_/g, '/')); } catch { return ''; }
+  };
+  if (payload.body?.data) {
+    const raw = decode(payload.body.data);
+    if (payload.mimeType === 'text/plain') return raw;
+    if (payload.mimeType === 'text/html') return stripHtmlTags(raw);
   }
+  let htmlFallback = '';
   for (const part of payload.parts || []) {
-    const text = extractEmailText(part);
-    if (text) return text;
+    if (part.mimeType === 'text/plain' && part.body?.data) {
+      const t = decode(part.body.data);
+      if (t) return t;
+    }
+    if (part.mimeType === 'text/html' && part.body?.data) {
+      htmlFallback = htmlFallback || stripHtmlTags(decode(part.body.data));
+    }
+    const nested = extractEmailText(part);
+    if (nested) return nested;
   }
-  return '';
+  return htmlFallback;
 }
 
 function parseHdfcEmail(body, emailDateMs) {
-  const amtMatch = body.match(/(?:Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  if (!body) return null;
+  if (/is\s+credited/i.test(body)) return null;
+  if (!/is\s+debited/i.test(body)) return null;
+
+  // Amount: "Rs.70.00 is debited" or "Rs 70.00 is debited"
+  const amtMatch = body.match(/Rs\.?\s*([\d,]+(?:\.\d{1,2})?)\s+is\s+debited/i);
   if (!amtMatch) return null;
   const amount = parseFloat(amtMatch[1].replace(/,/g, ''));
   if (!amount || amount <= 0) return null;
 
+  // Merchant: VPA xxx@yyy (MERCHANT NAME) → bracket text; else VPA handle
   let merchant = '';
-  const toMatch = body.match(/(?:to\s+VPA\s+([^\s]+)|[Tt]o\s+([A-Z][A-Za-z0-9 &\-\.]+?)(?:\s+on\s|\s+Ref|\s+UPI|\s+via|\s+at|\.))/);
-  if (toMatch) merchant = (toMatch[1] || toMatch[2] || '').trim().replace(/@\S+/, '').trim();
+  const vpaBracket = body.match(/VPA\s+\S+\s+\(([^)]+)\)/i);
+  if (vpaBracket) {
+    merchant = vpaBracket[1].trim();
+  } else {
+    const vpaBare = body.match(/VPA\s+([^\s,.(]+)/i);
+    if (vpaBare) merchant = vpaBare[1].split('@')[0].replace(/[._]/g, ' ').trim();
+  }
 
-  const refMatch = body.match(/(?:Ref(?:erence)?(?:\s*No\.?)?|UPI\s+Ref)\s*:?\s*([0-9]{8,20})/i);
+  // Date: "on DD-MM-YY" or "on DD-MM-YYYY"
+  let date;
+  const dateMatch = body.match(/\bon\s+(\d{1,2})-(\d{1,2})-(\d{2,4})/i);
+  if (dateMatch) {
+    const [, dd, mm, yy] = dateMatch;
+    const year = yy.length <= 2 ? '20' + yy.padStart(2, '0') : yy;
+    date = `${year}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  } else {
+    const d = new Date(emailDateMs);
+    date = d.toISOString().slice(0, 10);
+  }
+
+  // Reference number
+  const refMatch = body.match(/reference\s+no\.?\s*:?\s*(\d+)/i);
   const refNo = refMatch ? refMatch[1] : null;
 
-  const d = new Date(emailDateMs);
-  const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-
-  const method = /UPI/i.test(body) ? 'UPI' : /credit card|card/i.test(body) ? 'Card' : 'UPI';
-
-  return { amount, merchant, date, method, refNo };
+  return { amount, merchant, date, method: 'UPI', refNo };
 }
 
 function showGmailPreview(transactions, importedRefs) {
@@ -496,6 +543,13 @@ function showGmailPreview(transactions, importedRefs) {
     }
     await db.setSetting('gmail_imported_refs', newRefs);
     await db.setSetting('gmail_last_sync', Math.floor(Date.now() / 1000));
+    state.gmailSyncResult = {
+      checked: state.gmailSyncResult?.checked || 0,
+      imported: count,
+      skipped: state.gmailSyncResult?.skipped || 0,
+      senders: state.gmailSyncResult?.senders || '',
+      error: null
+    };
     gistSync();
     closeModal('gmail-preview-modal');
     renderView();
@@ -503,70 +557,78 @@ function showGmailPreview(transactions, importedRefs) {
   });
 }
 
-async function gmailSyncClick() {
-  let token = await getGmailToken();
+async function gmailDoSync(silent = false) {
+  const token = await getGmailToken();
   if (!token) {
-    if (!window.google?.accounts?.oauth2) { showToast('Please reconnect Gmail', 'error'); renderView(); return; }
-    if (!_gisTokenClient) {
-      initGISClient(async response => {
-        if (response.error) { showToast('Please reconnect Gmail', 'error'); renderView(); return; }
-        await db.setSetting('gmail_token', response.access_token);
-        await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
-        gmailSyncClick();
-      });
+    if (!silent) {
+      await db.setSetting('gmail_token', null);
+      state.gmailSyncResult = { error: 'Token expired — please Reconnect Gmail' };
+      showToast('Gmail token expired — please reconnect', 'error');
+      renderView();
     }
-    _gisTokenClient.requestAccessToken({ prompt: '' });
     return;
   }
 
   const btn = document.getElementById('gmail-sync-btn');
-  if (btn) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
+  if (btn && !silent) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
 
   try {
     const lastSync = await db.getSetting('gmail_last_sync', null);
-    const afterDate = lastSync
-      ? new Date(lastSync * 1000)
-      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth()+1).padStart(2,'0')}/${String(afterDate.getDate()).padStart(2,'0')}`;
+    let query;
+    if (lastSync) {
+      const d = new Date(lastSync * 1000);
+      const after = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+      query = `"is debited from your account" after:${after}`;
+    } else {
+      query = '"is debited from your account" newer_than:90d';
+    }
 
-    const query = `(from:alerts@hdfcbank.net OR from:noreply@hdfcbank.com OR from:hdfcbanksmtpalerts@hdfcbank.com) (debited OR "Sent Rs" OR UPI) after:${afterStr}`;
     const listRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=100`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
     if (listRes.status === 401) {
       await db.setSetting('gmail_token', null);
-      showToast('Gmail session expired — please reconnect', 'error');
-      renderView();
+      state.gmailSyncResult = { error: 'Token expired — please Reconnect Gmail' };
+      if (!silent) renderView();
       return;
     }
-    if (!listRes.ok) { showToast('Gmail API error: ' + listRes.status, 'error'); return; }
+    if (!listRes.ok) {
+      state.gmailSyncResult = { error: `Gmail API error ${listRes.status}` };
+      if (!silent) { showToast(state.gmailSyncResult.error, 'error'); renderView(); }
+      return;
+    }
 
     const listData = await listRes.json();
     const messages = listData.messages || [];
-    if (messages.length === 0) {
-      await db.setSetting('gmail_last_sync', Math.floor(Date.now() / 1000));
-      showToast('No new HDFC transactions found');
-      renderView();
-      return;
-    }
-
     const importedRefs = await db.getSetting('gmail_imported_refs', []);
     const importedSet = new Set(importedRefs);
+
+    let checkedCount = 0;
+    let skippedDupe = 0;
+    let skippedNoMatch = 0;
     const parsed = [];
+    const seenSenders = new Set();
 
     for (const msg of messages) {
       const msgRes = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!msgRes.ok) continue;
       const msgData = await msgRes.json();
+      checkedCount++;
+
+      const fromHeader = (msgData.payload?.headers || []).find(h => h.name === 'From');
+      if (fromHeader) seenSenders.add(fromHeader.value);
+
       const text = extractEmailText(msgData.payload || {});
       const emailDate = parseInt(msgData.internalDate || Date.now(), 10);
       const result = parseHdfcEmail(text, emailDate);
-      if (!result) continue;
-      if (result.refNo && importedSet.has(result.refNo)) continue;
+
+      if (!result) { skippedNoMatch++; continue; }
+      if (result.refNo && importedSet.has(result.refNo)) { skippedDupe++; continue; }
+
       const { categoryId } = await autoCategory(result.merchant);
       result.category = categoryId;
       parsed.push(result);
@@ -574,19 +636,32 @@ async function gmailSyncClick() {
 
     await db.setSetting('gmail_last_sync', Math.floor(Date.now() / 1000));
 
+    const senderInfo = seenSenders.size > 0 ? [...seenSenders].slice(0, 3).join(', ') : 'none found';
+    state.gmailSyncResult = {
+      checked: checkedCount,
+      imported: 0,
+      skipped: skippedDupe + skippedNoMatch,
+      senders: senderInfo,
+      error: null
+    };
+
     if (parsed.length === 0) {
-      showToast('No new HDFC transactions found');
-      renderView();
+      if (!silent) renderView();
       return;
     }
 
+    state.gmailPendingImport = parsed;
     showGmailPreview(parsed, importedRefs);
+
   } catch (err) {
-    showToast('Gmail sync failed: ' + err.message, 'error');
+    state.gmailSyncResult = { error: err.message };
+    if (!silent) showToast('Gmail sync failed: ' + err.message, 'error');
   } finally {
-    if (btn) { btn.textContent = '🔄 Sync Gmail'; btn.disabled = false; }
+    if (btn && !silent) { btn.textContent = '🔄 Sync Gmail'; btn.disabled = false; }
   }
 }
+
+async function gmailSyncClick() { return gmailDoSync(false); }
 
 // ─── Data Bootstrap ───────────────────────────────────────────────────────────
 async function bootstrap() {
@@ -1998,7 +2073,12 @@ async function renderSettings() {
            <button class="btn-primary" id="gmail-sync-btn">🔄 Sync Gmail</button>
            <button class="btn-secondary" id="gmail-disconnect-btn">Disconnect</button>
          </div>
-         ${gmailLastSync ? `<div class="hint-text" style="margin-top:8px">Last synced: ${new Date(gmailLastSync * 1000).toLocaleString()}</div>` : ''}`
+         ${gmailLastSync ? `<div class="hint-text" style="margin-top:8px">Last synced: ${new Date(gmailLastSync * 1000).toLocaleString()}</div>` : ''}
+         ${state.gmailSyncResult
+           ? state.gmailSyncResult.error
+             ? `<div class="sync-result sync-result-error">⚠️ ${state.gmailSyncResult.error}</div>`
+             : `<div class="sync-result sync-result-ok">✅ Checked ${state.gmailSyncResult.checked} emails · <strong>${state.gmailSyncResult.imported}</strong> imported · ${state.gmailSyncResult.skipped} skipped${state.gmailSyncResult.senders ? `<br><span style="font-size:11px;opacity:0.8">Senders: ${state.gmailSyncResult.senders}</span>` : ''}</div>`
+           : ''}`
       : `<button class="btn-primary" id="gmail-connect-btn">📧 Connect Gmail</button>
          <p class="hint-text" style="margin-top:8px">You'll need a Google OAuth 2.0 Client ID. <a href="https://console.cloud.google.com" target="_blank" rel="noopener" style="color:var(--accent)">Create one here</a> → APIs &amp; Services → Credentials → OAuth Client ID → Web application. Add this page's URL as redirect URI.</p>`
     }
@@ -2536,6 +2616,9 @@ async function init() {
   state.categories = await db.getAll('categories');
   state.merchantRules = await db.getAll('merchant_rules');
   await handleURLParams();
+
+  // Auto-sync Gmail silently on startup if token is valid
+  getGmailToken().then(t => { if (t) gmailDoSync(true); });
 
   // Nav clicks
   document.querySelectorAll('.nav-item').forEach(el => {

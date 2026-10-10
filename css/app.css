@@ -1256,6 +1256,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .modal-sheet-xl { max-width: 860px; }
 
 .import-wrap { padding: 4px 0 8px; }
+.sync-result { margin-top: 10px; font-size: 13px; padding: 10px 14px; border-radius: var(--radius-sm); line-height: 1.5; }
+.sync-result-ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+.sync-result-error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .import-hint { font-size: 14px; color: var(--text3); margin: 0 0 20px; line-height: 1.5; }
 
 .import-drop-zone {

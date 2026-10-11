@@ -392,6 +392,12 @@ function gmailConnectClick() {
       if (response.error) { showToast('Gmail auth failed: ' + response.error, 'error'); return; }
       await db.setSetting('gmail_token', response.access_token);
       await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
+      // Store email hint so future token refreshes can be silent
+      try {
+        const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo',
+          { headers: { Authorization: `Bearer ${response.access_token}` } });
+        if (r.ok) { const u = await r.json(); if (u.email) await db.setSetting('gmail_hint', u.email); }
+      } catch {}
       showToast('Gmail connected!', 'success');
       renderView();
     });
@@ -401,11 +407,31 @@ function gmailConnectClick() {
   }
 }
 
+// Silently get a new token using the stored email hint — no UI shown if Google session is active
+async function silentRefreshGmailToken() {
+  const hint = await db.getSetting('gmail_hint', null);
+  if (!hint) return null;
+  try { await loadGIS(); } catch { return null; }
+  if (!window.google?.accounts?.oauth2) return null;
+  return new Promise(resolve => {
+    try {
+      initGISClient(async response => {
+        if (response.error) { resolve(null); return; }
+        await db.setSetting('gmail_token', response.access_token);
+        await db.setSetting('gmail_token_expiry', Date.now() + (response.expires_in || 3600) * 1000);
+        resolve(response.access_token);
+      });
+      _gisTokenClient.requestAccessToken({ prompt: '', hint });
+    } catch { resolve(null); }
+  });
+}
+
 async function getGmailToken() {
   const token = await db.getSetting('gmail_token', null);
   const expiry = await db.getSetting('gmail_token_expiry', 0);
-  if (!token || Date.now() > expiry - 60000) return null;
-  return token;
+  if (token && Date.now() < expiry - 60000) return token;
+  // Token missing or expired — try silent background refresh
+  return silentRefreshGmailToken();
 }
 
 function stripHtmlTags(html) {
@@ -2719,6 +2745,7 @@ function mountSettings() {
   document.getElementById('gmail-disconnect-btn')?.addEventListener('click', async () => {
     await db.setSetting('gmail_token', null);
     await db.setSetting('gmail_token_expiry', 0);
+    await db.setSetting('gmail_hint', null);
     showToast('Gmail disconnected');
     renderView();
   });

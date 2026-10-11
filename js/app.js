@@ -1350,15 +1350,13 @@ function renderPieChart(expenses) {
   const c2d = canvas.getContext('2d');
   c2d.scale(dpr, dpr);
 
-  // Polyfill c2d.ellipse for browsers that don't support it
-  if (!c2d.ellipse) {
-    c2d.ellipse = function(x, y, rx, ry, rot, start, end, ccw) {
-      this.save();
-      this.translate(x, y); this.rotate(rot); this.scale(rx, ry);
-      this.arc(0, 0, 1, start, end, ccw);
-      this.restore();
-    };
-  }
+  // Always use arc()-based ellipse to avoid Safari's native ellipse bugs
+  c2d.ellipse = function(x, y, rx, ry, rot, start, end, ccw) {
+    this.save();
+    this.translate(x, y); this.rotate(rot || 0); this.scale(rx, ry);
+    this.arc(0, 0, 1, start, end, ccw || false);
+    this.restore();
+  };
 
   // ── 3D geometry ──────────────────────────────────────────────────────────────
   const RX    = SIZE * 0.42;           // x-radius of top ellipse

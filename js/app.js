@@ -1399,173 +1399,174 @@ function renderPieChart(expenses) {
   };
   state.chart = cleanup;
 
-  // ── Segment path helper ──────────────────────────────────────────────────────
-  function segPath(s, clampedEnd, ox, oy, ro) {
-    c2d.beginPath();
-    c2d.arc(cx + ox, cy + oy, ro, s.startAngle, clampedEnd);
-    c2d.arc(cx + ox, cy + oy, RI, clampedEnd, s.startAngle, true);
-    c2d.closePath();
+  // ── Draw ─────────────────────────────────────────────────────────────────────
+  let _drawFailed = false;
+  function draw(progress) {
+    if (_drawFailed) { drawFlat(progress); return; }
+    try { drawDonut(progress); } catch(err) { _drawFailed = true; console.error('donut draw error:', err); drawFlat(progress); }
   }
 
-  // ── Draw ─────────────────────────────────────────────────────────────────────
-  function draw(progress) {
+  // Simple flat fallback (no gradients, no clips — guaranteed to render)
+  function drawFlat(progress) {
     c2d.clearRect(0, 0, SIZE, SIZE);
-    const progressAngle = -Math.PI / 2 + progress * Math.PI * 2;
-
-    // Drop shadow ring
-    c2d.save();
-    c2d.shadowColor   = 'rgba(120,0,255,0.40)';
-    c2d.shadowBlur    = 24;
-    c2d.shadowOffsetY = 5;
-    c2d.beginPath();
-    c2d.arc(cx, cy, RO_MAX * 0.90, 0, Math.PI * 2);
-    c2d.arc(cx, cy, RI * 0.80, 0, Math.PI * 2, true);
-    c2d.fillStyle = 'rgba(60,0,120,0.01)';
-    c2d.fill();
-    c2d.restore();
-
-    // Pass 1 — segment fills + iridescent tint
+    const pa = -Math.PI / 2 + progress * Math.PI * 2;
     for (let i = 0; i < slices.length; i++) {
       const s = slices[i];
-      const clampedEnd = Math.min(s.endAngle, progressAngle);
-      if (clampedEnd <= s.startAngle) continue;
-
+      const end = Math.min(s.endAngle, pa);
+      if (end <= s.startAngle) continue;
       const pop = i === activeIdx;
-      const ox  = pop ? 9 * Math.cos(s.midAngle) : 0;
-      const oy  = pop ? 9 * Math.sin(s.midAngle) : 0;
-      const ro  = s.ro + (pop ? 7 : 0);
-
-      c2d.save();
-      segPath(s, clampedEnd, ox, oy, ro);
-
-      // Radial gradient: bright at mid, rich at rim
-      const rg = c2d.createRadialGradient(cx + ox, cy + oy, RI * 0.6, cx + ox, cy + oy, ro);
-      rg.addColorStop(0,    rgba(s.cat.color, 0.65));
-      rg.addColorStop(0.55, rgba(s.cat.color, 0.90));
-      rg.addColorStop(1,    rgba(darken(s.cat.color, 0.70), 0.98));
-      c2d.fillStyle = rg;
-      c2d.fill();
-
-      // Iridescent diagonal tint
-      const h = hexHue(s.cat.color);
-      const iris = c2d.createLinearGradient(cx + ox - ro, cy + oy - ro, cx + ox + ro, cy + oy + ro);
-      iris.addColorStop(0,    `hsla(${(h+120)%360},100%,70%,0.15)`);
-      iris.addColorStop(0.5,  `hsla(${(h+240)%360},100%,80%,0.10)`);
-      iris.addColorStop(1,    `hsla(${h%360},100%,68%,0.13)`);
-      c2d.fillStyle = iris;
-      c2d.fill();
-
-      // Separator stroke
-      c2d.strokeStyle = 'rgba(255,255,255,0.18)';
-      c2d.lineWidth   = 1.2;
-      c2d.stroke();
-
-      // Outer rim glow per segment
-      c2d.shadowColor = rgba(s.cat.color, 0.75);
-      c2d.shadowBlur  = 10;
+      const ox = pop ? 8 * Math.cos(s.midAngle) : 0;
+      const oy = pop ? 8 * Math.sin(s.midAngle) : 0;
       c2d.beginPath();
-      c2d.arc(cx + ox, cy + oy, ro, s.startAngle, clampedEnd);
-      c2d.strokeStyle = rgba(s.cat.color, 0.85);
-      c2d.lineWidth   = 2;
+      c2d.arc(cx + ox, cy + oy, s.ro + (pop ? 6 : 0), s.startAngle, end);
+      c2d.arc(cx + ox, cy + oy, RI, end, s.startAngle, true);
+      c2d.closePath();
+      c2d.fillStyle = s.cat.color;
+      c2d.fill();
+      c2d.strokeStyle = 'rgba(255,255,255,0.22)';
+      c2d.lineWidth = 1.5;
       c2d.stroke();
-
-      c2d.restore();
     }
-
-    // Pass 2 — holographic overlays, per segment (rainbow + scanlines + shimmer + specular)
-    for (let i = 0; i < slices.length; i++) {
-      const s = slices[i];
-      const clampedEnd = Math.min(s.endAngle, progressAngle);
-      if (clampedEnd <= s.startAngle) continue;
-
-      const pop = i === activeIdx;
-      const ox  = pop ? 9 * Math.cos(s.midAngle) : 0;
-      const oy  = pop ? 9 * Math.sin(s.midAngle) : 0;
-      const ro  = s.ro + (pop ? 7 : 0);
-      const box = ro * 2;
-
-      c2d.save();
-      segPath(s, clampedEnd, ox, oy, ro);
-      c2d.clip();
-
-      // Rainbow band (rotates with shimPhase)
-      const rx1 = cx + ox + Math.cos(shimPhase) * ro * 1.3;
-      const ry1 = cy + oy + Math.sin(shimPhase) * ro * 1.3;
-      const rx2 = cx + ox - Math.cos(shimPhase) * ro * 1.3;
-      const ry2 = cy + oy - Math.sin(shimPhase) * ro * 1.3;
-      const rg2 = c2d.createLinearGradient(rx1, ry1, rx2, ry2);
-      rg2.addColorStop(0.00, 'rgba(255,0,128,0.10)');
-      rg2.addColorStop(0.17, 'rgba(255,110,0,0.08)');
-      rg2.addColorStop(0.33, 'rgba(210,255,0,0.07)');
-      rg2.addColorStop(0.50, 'rgba(0,255,140,0.08)');
-      rg2.addColorStop(0.67, 'rgba(0,130,255,0.09)');
-      rg2.addColorStop(0.83, 'rgba(155,0,255,0.10)');
-      rg2.addColorStop(1.00, 'rgba(255,0,200,0.09)');
-      c2d.fillStyle = rg2;
-      c2d.fillRect(cx + ox - ro, cy + oy - ro, box, box);
-
-      // Scanlines
-      c2d.globalAlpha = 0.028;
-      for (let yy = cy + oy - ro; yy < cy + oy + ro; yy += 4) {
-        c2d.fillStyle = '#ffffff';
-        c2d.fillRect(cx + ox - ro, yy, box, 1.4);
-      }
-      c2d.globalAlpha = 1;
-
-      // Moving shimmer stripe
-      const sa  = shimPhase * 1.7 + i * 0.4;
-      const snx = -Math.sin(sa), sny = Math.cos(sa);
-      const sg = c2d.createLinearGradient(
-        cx + ox + snx * ro * 1.5, cy + oy + sny * ro * 1.5,
-        cx + ox - snx * ro * 1.5, cy + oy - sny * ro * 1.5
-      );
-      sg.addColorStop(0,    'rgba(255,255,255,0)');
-      sg.addColorStop(0.43, 'rgba(255,255,255,0)');
-      sg.addColorStop(0.50, 'rgba(255,255,255,0.30)');
-      sg.addColorStop(0.57, 'rgba(255,255,255,0)');
-      sg.addColorStop(1,    'rgba(255,255,255,0)');
-      c2d.fillStyle = sg;
-      c2d.fillRect(cx + ox - ro, cy + oy - ro, box, box);
-
-      // Glass specular (top-left quadrant gloss)
-      const sg2 = c2d.createRadialGradient(
-        cx + ox - ro * 0.30, cy + oy - ro * 0.52, 1,
-        cx + ox,             cy + oy,              ro * 0.85
-      );
-      sg2.addColorStop(0,    'rgba(255,255,255,0.42)');
-      sg2.addColorStop(0.22, 'rgba(255,255,255,0.18)');
-      sg2.addColorStop(0.55, 'rgba(255,255,255,0.05)');
-      sg2.addColorStop(1,    'rgba(255,255,255,0)');
-      c2d.fillStyle = sg2;
-      c2d.fillRect(cx + ox - ro, cy + oy - ro, box, box);
-
-      c2d.restore();
-    }
-
-    // Inner hole dark fill + inner rim glow
-    c2d.save();
+    // inner hole
     c2d.beginPath();
     c2d.arc(cx, cy, RI - 1, 0, Math.PI * 2);
-    c2d.fillStyle = 'rgba(8,3,18,0.92)';
+    c2d.fillStyle = '#0d0618';
     c2d.fill();
-    c2d.shadowColor = 'rgba(192,132,252,0.70)';
-    c2d.shadowBlur  = 14;
-    c2d.strokeStyle = 'rgba(210,170,255,0.50)';
-    c2d.lineWidth   = 1.8;
-    c2d.stroke();
+    for (const p of particles) {
+      c2d.save(); c2d.globalAlpha = Math.max(0, p.life);
+      c2d.fillStyle = p.color; c2d.beginPath();
+      c2d.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2);
+      c2d.fill(); c2d.restore();
+    }
+  }
+
+  function drawDonut(progress) {
+    c2d.clearRect(0, 0, SIZE, SIZE);
+    const progressAngle = -Math.PI / 2 + progress * Math.PI * 2;
+    const D = RO_MAX * 2;   // bounding box side
+
+    // Drop shadow
+    c2d.save();
+    c2d.shadowColor = 'rgba(120,0,255,0.45)'; c2d.shadowBlur = 26; c2d.shadowOffsetY = 6;
+    c2d.beginPath(); c2d.arc(cx, cy, RO_MAX * 0.88, 0, Math.PI * 2);
+    c2d.fillStyle = 'rgba(40,0,80,0.01)'; c2d.fill();
+    c2d.restore();
+
+    // Pass 1 — segment base fills
+    for (let i = 0; i < slices.length; i++) {
+      const s = slices[i];
+      const clampedEnd = Math.min(s.endAngle, progressAngle);
+      if (clampedEnd <= s.startAngle) continue;
+      const pop = i === activeIdx;
+      const ox = pop ? 9 * Math.cos(s.midAngle) : 0;
+      const oy = pop ? 9 * Math.sin(s.midAngle) : 0;
+      const ro = s.ro + (pop ? 7 : 0);
+
+      c2d.save();
+      c2d.beginPath();
+      c2d.arc(cx + ox, cy + oy, ro, s.startAngle, clampedEnd);
+      c2d.arc(cx + ox, cy + oy, RI, clampedEnd, s.startAngle, true);
+      c2d.closePath();
+
+      // Radial gradient (inner to outer)
+      const rg = c2d.createRadialGradient(cx + ox, cy + oy, RI * 0.5, cx + ox, cy + oy, ro);
+      rg.addColorStop(0,    rgba(s.cat.color, 0.60));
+      rg.addColorStop(0.5,  rgba(s.cat.color, 0.88));
+      rg.addColorStop(1,    rgba(darken(s.cat.color, 0.72), 0.98));
+      c2d.fillStyle = rg; c2d.fill();
+
+      // Iridescent tint
+      const h = hexHue(s.cat.color);
+      const iris = c2d.createLinearGradient(cx + ox - ro, cy + oy - ro, cx + ox + ro, cy + oy + ro);
+      iris.addColorStop(0,   `hsla(${(h+120)%360},100%,70%,0.14)`);
+      iris.addColorStop(0.5, `hsla(${(h+240)%360},100%,78%,0.09)`);
+      iris.addColorStop(1,   `hsla(${h%360},100%,66%,0.12)`);
+      c2d.fillStyle = iris; c2d.fill();
+
+      // Segment gap border
+      c2d.strokeStyle = 'rgba(255,255,255,0.16)'; c2d.lineWidth = 1.2; c2d.stroke();
+
+      // Per-segment outer rim glow
+      c2d.shadowColor = rgba(s.cat.color, 0.72); c2d.shadowBlur = 9;
+      c2d.beginPath(); c2d.arc(cx + ox, cy + oy, ro, s.startAngle, clampedEnd);
+      c2d.strokeStyle = rgba(s.cat.color, 0.88); c2d.lineWidth = 2.2; c2d.stroke();
+
+      c2d.restore();
+    }
+
+    // Pass 2 — holographic overlays (single donut-ring clip for whole pass)
+    c2d.save();
+    // Build full donut clip path (max outer radius, inner hole)
+    c2d.beginPath();
+    c2d.arc(cx, cy, RO_MAX + 10, 0, Math.PI * 2);
+    c2d.arc(cx, cy, RI - 1, 0, Math.PI * 2, true);
+    c2d.clip();
+
+    // Rainbow band rotating with shimPhase
+    const rx1 = cx + Math.cos(shimPhase) * (RO_MAX + 10);
+    const ry1 = cy + Math.sin(shimPhase) * (RO_MAX + 10);
+    const rx2 = cx - Math.cos(shimPhase) * (RO_MAX + 10);
+    const ry2 = cy - Math.sin(shimPhase) * (RO_MAX + 10);
+    const rg2 = c2d.createLinearGradient(rx1, ry1, rx2, ry2);
+    rg2.addColorStop(0.00, 'rgba(255,0,128,0.09)');
+    rg2.addColorStop(0.17, 'rgba(255,100,0,0.07)');
+    rg2.addColorStop(0.33, 'rgba(200,255,0,0.06)');
+    rg2.addColorStop(0.50, 'rgba(0,255,140,0.07)');
+    rg2.addColorStop(0.67, 'rgba(0,120,255,0.08)');
+    rg2.addColorStop(0.83, 'rgba(150,0,255,0.09)');
+    rg2.addColorStop(1.00, 'rgba(255,0,180,0.08)');
+    c2d.fillStyle = rg2;
+    c2d.fillRect(cx - RO_MAX - 10, cy - RO_MAX - 10, D + 20, D + 20);
+
+    // Scanlines
+    c2d.globalAlpha = 0.025;
+    for (let yy = cy - RO_MAX; yy < cy + RO_MAX; yy += 4) {
+      c2d.fillStyle = '#ffffff';
+      c2d.fillRect(cx - RO_MAX, yy, D, 1.4);
+    }
+    c2d.globalAlpha = 1;
+
+    // Moving shimmer stripe
+    const snx = -Math.sin(shimPhase * 1.6 + 1.1), sny = Math.cos(shimPhase * 1.6 + 1.1);
+    const sg = c2d.createLinearGradient(
+      cx + snx * (RO_MAX + 10), cy + sny * (RO_MAX + 10),
+      cx - snx * (RO_MAX + 10), cy - sny * (RO_MAX + 10)
+    );
+    sg.addColorStop(0,    'rgba(255,255,255,0)');
+    sg.addColorStop(0.44, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.50, 'rgba(255,255,255,0.28)');
+    sg.addColorStop(0.56, 'rgba(255,255,255,0)');
+    sg.addColorStop(1,    'rgba(255,255,255,0)');
+    c2d.fillStyle = sg;
+    c2d.fillRect(cx - RO_MAX - 10, cy - RO_MAX - 10, D + 20, D + 20);
+
+    // Glass specular (top-left gloss)
+    const sg2 = c2d.createRadialGradient(cx - RO_MAX * 0.28, cy - RO_MAX * 0.52, 1, cx, cy, RO_MAX * 0.90);
+    sg2.addColorStop(0,    'rgba(255,255,255,0.38)');
+    sg2.addColorStop(0.20, 'rgba(255,255,255,0.16)');
+    sg2.addColorStop(0.55, 'rgba(255,255,255,0.04)');
+    sg2.addColorStop(1,    'rgba(255,255,255,0)');
+    c2d.fillStyle = sg2;
+    c2d.fillRect(cx - RO_MAX - 10, cy - RO_MAX - 10, D + 20, D + 20);
+
+    c2d.restore();  // end donut clip
+
+    // Inner hole
+    c2d.save();
+    c2d.beginPath(); c2d.arc(cx, cy, RI - 1, 0, Math.PI * 2);
+    c2d.fillStyle = 'rgba(8,3,18,0.94)'; c2d.fill();
+    c2d.shadowColor = 'rgba(192,132,252,0.72)'; c2d.shadowBlur = 14;
+    c2d.strokeStyle = 'rgba(210,170,255,0.48)'; c2d.lineWidth = 1.8; c2d.stroke();
     c2d.restore();
 
     // Sparkle particles
     for (const p of particles) {
       c2d.save();
       c2d.globalAlpha = Math.max(0, p.life);
-      c2d.shadowColor = p.color;
-      c2d.shadowBlur  = 8;
-      c2d.fillStyle   = p.color;
-      c2d.beginPath();
+      c2d.shadowColor = p.color; c2d.shadowBlur = 8;
+      c2d.fillStyle = p.color; c2d.beginPath();
       c2d.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2);
-      c2d.fill();
-      c2d.restore();
+      c2d.fill(); c2d.restore();
     }
   }
 

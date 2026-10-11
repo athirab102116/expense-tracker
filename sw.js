@@ -1,4 +1,4 @@
-const CACHE = 'expense-tracker-v50';
+const CACHE = 'expense-tracker-v51';
 const ASSETS = [
   './',
   './index.html',

@@ -1350,13 +1350,11 @@ function renderPieChart(expenses) {
   const c2d = canvas.getContext('2d');
   c2d.scale(dpr, dpr);
 
-  // Always use arc()-based ellipse to avoid Safari's native ellipse bugs
-  c2d.ellipse = function(x, y, rx, ry, rot, start, end, ccw) {
-    this.save();
-    this.translate(x, y); this.rotate(rot || 0); this.scale(rx, ry);
-    this.arc(0, 0, 1, start, end, ccw || false);
-    this.restore();
-  };
+  // Draw an ellipse arc without ctx.ellipse() — avoids Safari compat issues
+  function eArc(x, y, rx, ry, start, end, ccw) {
+    c2d.save(); c2d.translate(x, y); c2d.scale(rx, ry);
+    c2d.arc(0, 0, 1, start, end, ccw); c2d.restore();
+  }
 
   // ── 3D geometry ──────────────────────────────────────────────────────────────
   const RX    = SIZE * 0.42;           // x-radius of top ellipse
@@ -1449,7 +1447,7 @@ function renderPieChart(expenses) {
     c2d.shadowBlur   = 36;
     c2d.shadowOffsetY = DEPTH + 6;
     c2d.beginPath();
-    c2d.ellipse(cx, botCY, RX * 0.95, RY * 0.65, 0, 0, Math.PI * 2);
+    eArc(cx, botCY, RX * 0.95, RY * 0.65, 0, Math.PI * 2);
     c2d.fillStyle = 'rgba(60,0,120,0.01)';
     c2d.fill();
     c2d.restore();
@@ -1469,7 +1467,7 @@ function renderPieChart(expenses) {
       c2d.beginPath();
       c2d.moveTo(cx + RX*Math.cos(visStart), topCY + RY*Math.sin(visStart));
       c2d.lineTo(cx + RX*Math.cos(visStart), botCY + RY*Math.sin(visStart));
-      c2d.ellipse(cx, botCY, RX, RY, 0, visStart, visEnd);
+      eArc(cx, botCY, RX, RY, visStart, visEnd);
       c2d.lineTo(cx + RX*Math.cos(visEnd), topCY + RY*Math.sin(visEnd));
       // Trace top-face arc back from visEnd→visStart as polygon (avoids anticlockwise ellipse Safari bug)
       const rimSteps = Math.max(4, Math.ceil((visEnd - visStart) / (Math.PI / 10)));
@@ -1506,9 +1504,9 @@ function renderPieChart(expenses) {
 
       c2d.save();
       c2d.beginPath();
-      c2d.moveTo(cx + ox, topCY + oy);
-      c2d.ellipse(cx + ox, topCY + oy, RX, RY, 0, s.startAngle, clampedEnd);
-      c2d.closePath();
+      c2d.save(); c2d.translate(cx + ox, topCY + oy); c2d.scale(RX, RY);
+      c2d.moveTo(0, 0); c2d.arc(0, 0, 1, s.startAngle, clampedEnd);
+      c2d.restore(); c2d.closePath();
       c2d.fillStyle = s.cat.color;
       c2d.fill();
 
@@ -1530,7 +1528,7 @@ function renderPieChart(expenses) {
     // ── Holographic + glass overlays (clipped to top ellipse) ─────────────────
     c2d.save();
     c2d.beginPath();
-    c2d.ellipse(cx, topCY, RX, RY, 0, 0, Math.PI * 2);
+    eArc(cx, topCY, RX, RY, 0, Math.PI * 2);
     c2d.clip();
 
     // 4 · Rainbow holographic band (angle rotates with shimmer)
@@ -1579,7 +1577,7 @@ function renderPieChart(expenses) {
     // 7 · Glass specular highlight (top-left gloss)
     c2d.save();
     c2d.beginPath();
-    c2d.ellipse(cx, topCY, RX, RY, 0, 0, Math.PI * 2);
+    eArc(cx, topCY, RX, RY, 0, Math.PI * 2);
     c2d.clip();
     const sg2 = c2d.createRadialGradient(
       cx - RX*0.28, topCY - RY*0.55, 1,
@@ -1596,7 +1594,7 @@ function renderPieChart(expenses) {
     // 8 · Rim glow
     c2d.save();
     c2d.beginPath();
-    c2d.ellipse(cx, topCY, RX + 1, RY + 1, 0, 0, Math.PI * 2);
+    eArc(cx, topCY, RX + 1, RY + 1, 0, Math.PI * 2);
     c2d.shadowColor = 'rgba(192,132,252,0.85)';
     c2d.shadowBlur  = 16;
     c2d.strokeStyle = 'rgba(230,190,255,0.60)';

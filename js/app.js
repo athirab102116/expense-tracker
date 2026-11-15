@@ -2972,6 +2972,9 @@ async function mountBudgets() {
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
+const CAT_EMOJI_PRESETS = ['🍽️','🛒','🚌','🏪','💡','🏠','🎬','💊','📚','✈️','☕','🎁','💅','🐾','🏋️','🎵','🍕','🥗','🎮','💻','🧴','🌿','🎨','🏦','💰','🧾','🤝','🛠️','📱','🎯'];
+const CAT_COLOR_PRESETS = ['#FF6B6B','#FF8E53','#FFC312','#A3CB38','#1289A7','#4ECDC4','#45B7D1','#A29BFE','#FD79A8','#E056FD','#6C5CE7','#00B894','#FDCB6E','#E17055','#74B9FF','#55EFC4','#636E72','#DDA0DD','#98D8C8','#F8C291'];
+
 async function renderSettings() {
   const gmailToken = await db.getSetting('gmail_token', null);
   const gmailExpiry = await db.getSetting('gmail_token_expiry', 0);
@@ -3058,16 +3061,37 @@ async function renderSettings() {
   <!-- Categories -->
   <div class="settings-section card">
     <div class="settings-section-title">🏷️ Categories</div>
+    <p class="hint-text" style="margin-bottom:12px">Manage your categories. Each category appears as a compact tag below.</p>
+    
     <div id="cat-settings-list">
       ${state.categories.map(cat => `
         <div class="cat-setting-row" data-cat-id="${cat.id}">
-          <div class="cat-setting-icon" style="background:${cat.color}22;color:${cat.color}">${cat.emoji}</div>
+          <span class="cat-setting-icon">${cat.emoji}</span>
           <span class="cat-setting-name">${cat.name}</span>
-          ${cat.id !== 'other' ? `<button class="cat-setting-del" data-cat-id="${cat.id}" title="Delete">✕</button>` : '<span style="width:28px"></span>'}
+          ${cat.id !== 'other' ? `<button type="button" class="cat-setting-del" data-cat-id="${cat.id}" title="Delete ${cat.name}">✕</button>` : ''}
         </div>
       `).join('')}
     </div>
-    <button class="btn-add-cat" id="open-add-cat-btn" style="margin-top:14px;width:100%;padding:10px;border-radius:var(--radius-sm)">＋ Add Category</button>
+
+    <!-- Inline Add Category Form -->
+    <form id="inline-add-cat-form" class="inline-add-cat-form">
+      <div class="inline-cat-input-wrap">
+        <button type="button" id="inline-cat-emoji-btn" class="inline-cat-emoji-btn" title="Choose Icon">
+          <span id="inline-cat-emoji-val">🏷️</span>
+        </button>
+        <input type="text" id="inline-cat-name-input" class="inline-cat-name-input" placeholder="Add new category…" maxlength="28" required autocomplete="off">
+        <label class="inline-cat-color-label" title="Pick color">
+          <input type="color" id="inline-cat-color-input" value="#6366f1" class="inline-cat-color-input">
+          <span id="inline-cat-color-swatch" class="inline-cat-color-swatch" style="background:#6366f1"></span>
+        </label>
+      </div>
+      <button type="submit" class="btn-primary-sm inline-cat-submit-btn">＋ Add</button>
+      <button type="button" class="btn-secondary-sm" id="open-add-cat-btn" title="Open full palette & presets">🎨 Presets</button>
+    </form>
+
+    <div id="inline-cat-emoji-popover" class="inline-cat-emoji-popover" style="display:none">
+      ${CAT_EMOJI_PRESETS.map(em => `<button type="button" class="inline-emoji-opt" data-emoji="${em}">${em}</button>`).join('')}
+    </div>
   </div>
 
   <!-- Sound Effects -->
@@ -3134,7 +3158,52 @@ function mountSettings() {
     if (btn) btn.textContent = e.target.checked ? '🔊' : '🔇';
   });
 
-  // Open add-category modal
+  // Inline Add Category Form
+  document.getElementById('inline-add-cat-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const nameInput = document.getElementById('inline-cat-name-input');
+    const name = nameInput?.value.trim();
+    if (!name) return showToast('Please enter a category name', 'error');
+
+    if (state.categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      return showToast(`Category "${name}" already exists`, 'error');
+    }
+
+    const emoji = document.getElementById('inline-cat-emoji-val')?.textContent || '🏷️';
+    const color = document.getElementById('inline-cat-color-input')?.value || '#6366f1';
+    const id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString(36);
+
+    await db.add('categories', { id, name, emoji, color });
+    state.categories = await db.getAll('categories');
+    showToast(`Category "${name}" added!`, 'success');
+    renderView();
+  });
+
+  // Emoji popover toggle & selection
+  const emojiBtn = document.getElementById('inline-cat-emoji-btn');
+  const emojiPopover = document.getElementById('inline-cat-emoji-popover');
+  emojiBtn?.addEventListener('click', () => {
+    if (emojiPopover) {
+      emojiPopover.style.display = emojiPopover.style.display === 'none' ? 'flex' : 'none';
+    }
+  });
+
+  document.querySelectorAll('.inline-emoji-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const emojiVal = document.getElementById('inline-cat-emoji-val');
+      if (emojiVal) emojiVal.textContent = btn.dataset.emoji;
+      if (emojiPopover) emojiPopover.style.display = 'none';
+    });
+  });
+
+  // Live color swatch update
+  const colorInput = document.getElementById('inline-cat-color-input');
+  const colorSwatch = document.getElementById('inline-cat-color-swatch');
+  colorInput?.addEventListener('input', e => {
+    if (colorSwatch) colorSwatch.style.background = e.target.value;
+  });
+
+  // Open full add-category modal / presets
   document.getElementById('open-add-cat-btn')?.addEventListener('click', () => openAddCategoryModal());
 
   // Delete category buttons
@@ -3162,9 +3231,6 @@ function mountSettings() {
 }
 
 // ─── Add Category Modal ───────────────────────────────────────────────────────
-const CAT_EMOJI_PRESETS = ['🍽️','🛒','🚌','🏪','💡','🏠','🎬','💊','📚','✈️','☕','🎁','💅','🐾','🏋️','🎵','🍕','🥗','🎮','💻','🧴','🌿','🎨','🏦','💰','🧾','🤝','🛠️','📱','🎯'];
-const CAT_COLOR_PRESETS = ['#FF6B6B','#FF8E53','#FFC312','#A3CB38','#1289A7','#4ECDC4','#45B7D1','#A29BFE','#FD79A8','#E056FD','#6C5CE7','#00B894','#FDCB6E','#E17055','#74B9FF','#55EFC4','#636E72','#DDA0DD','#98D8C8','#F8C291'];
-
 function openAddCategoryModal() {
   const firstEmoji = CAT_EMOJI_PRESETS[0];
   const firstColor = CAT_COLOR_PRESETS[0];

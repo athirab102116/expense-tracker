@@ -5,8 +5,8 @@
   "start_url": "/expense-tracker/",
   "scope": "/expense-tracker/",
   "display": "standalone",
-  "background_color": "#f4efe8",
-  "theme_color": "#7a9b64",
+  "background_color": "#ffffff",
+  "theme_color": "#1a73e8",
   "orientation": "portrait",
   "categories": ["finance", "utilities"],
   "icons": [

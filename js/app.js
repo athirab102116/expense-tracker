@@ -62,7 +62,7 @@ function showToast(msg, type = 'success') {
   if (existing) existing.remove();
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
-  const icon = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : '✨';
+  const icon = type === 'error' ? '✕' : type === 'warn' ? '⚠️' : '✓';
   t.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg">${msg}</span>`;
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add('show'));
@@ -159,7 +159,7 @@ async function recordPendingMerchant(merchant, categoryId) {
       state.merchantRules = await db.getAll('merchant_rules');
       delete pending[lower];
       await db.setSetting('pending_merchants', pending);
-      showToast(`✨ Saved "${merchant}" → ${getCat(entry.categoryId).emoji} ${getCat(entry.categoryId).name} permanently`);
+      showToast(`Saved "${merchant}" → ${getCat(entry.categoryId).emoji} ${getCat(entry.categoryId).name} permanently`);
       return;
     }
   } else {
@@ -1373,26 +1373,7 @@ function initParticles() {
 }
 
 function initCustomCursor() {
-  if (!window.matchMedia('(pointer: fine)').matches) return;
-  document.body.classList.add('has-custom-cursor');
-  const cur = document.createElement('div');
-  cur.id = 'custom-cursor';
-  cur.textContent = '🪄';
-  document.body.appendChild(cur);
-  document.addEventListener('mousemove', e => {
-    if (window.gsap) {
-      window.gsap.to(cur, { x: e.clientX, y: e.clientY, duration: 0.12, ease: 'power2.out' });
-    } else {
-      cur.style.transform = `translate(${e.clientX - 5}px,${e.clientY - 5}px)`;
-    }
-  });
-  const hoverSel = 'button, .card, .nav-item, a, input, select, .cat-pick, .method-btn';
-  document.addEventListener('mouseover', e => {
-    if (e.target.closest(hoverSel)) window.gsap?.to(cur, { scale: 2.2, duration: 0.2 });
-  });
-  document.addEventListener('mouseout', e => {
-    if (e.target.closest(hoverSel)) window.gsap?.to(cur, { scale: 1, duration: 0.2 });
-  });
+  // Using native OS cursor for optimal accessibility, precision, and performance
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -1557,14 +1538,14 @@ async function renderDashboard() {
       <div class="chart-header">
         <span class="chart-title">Where it went</span>
         <div class="toggle-btns">
-          <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">🌸 Chart</button>
-          <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🖼️ Picture</button>
+          <button class="toggle-btn ${!state.pictureMode ? 'active' : ''}" id="btn-pie">📊 Breakdown</button>
+          <button class="toggle-btn ${state.pictureMode ? 'active' : ''}" id="btn-picture">🏷️ Categories</button>
         </div>
       </div>
       <div id="pie-view" class="${state.pictureMode ? 'hidden' : ''}">
         ${total > 0
           ? `<div class="chart-wrap"><canvas id="pieChart"></canvas></div><div class="cat-list">${catRows}</div>`
-          : '<div class="empty-state"><div class="empty-icon">🌸</div><div class="empty-title">No expenses yet</div><div class="empty-sub">Press N or tap + to add one</div></div>'
+          : '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No expenses yet</div><div class="empty-sub">Press N or tap + to add one</div></div>'
         }
       </div>
       <div id="picture-view" class="${state.pictureMode ? '' : 'hidden'}">
@@ -3457,7 +3438,7 @@ async function importConfirmed(parsedRows, previewWrap) {
   gistSync();
   closeModal('import-modal');
   renderView();
-  showToast(`✨ Imported ${count} expense${count !== 1 ? 's' : ''}`);
+  showToast(`Imported ${count} expense${count !== 1 ? 's' : ''}`);
 }
 
 // ─── File Download Helper ─────────────────────────────────────────────────────

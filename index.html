@@ -28,7 +28,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=65">
+  <link rel="stylesheet" href="css/app.css?v=66">
 </head>
 <body>
   <div id="app">
@@ -193,7 +193,7 @@
               <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg>
           </div>
-          <div style="font-family:var(--font-serif);font-size:18px;color:var(--text3)">Loading Dashboard...</div>
+          <div style="font-family:var(--font);font-size:16px;font-weight:600;color:var(--text3)">Loading Dashboard...</div>
         </div>
       </main>
     </div>
@@ -303,13 +303,13 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=65"></script>
+  <script type="module" src="js/app.js?v=66"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=65')
+        navigator.serviceWorker.register('sw.js?v=66')
           .then(r => console.log('SW registered:', r.scope))
           .catch(e => console.log('SW registration failed:', e));
       });

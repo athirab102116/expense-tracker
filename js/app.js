@@ -82,6 +82,15 @@ function getCat(id) {
   return state.categories.find(c => c.id === id) || { id: 'other', name: 'Other', emoji: '💫', color: '#A89B95' };
 }
 
+function isSavingsCategory(catId) {
+  if (!catId) return false;
+  const id = String(catId).toLowerCase().trim();
+  if (id === 'savings' || id === 'saving') return true;
+  const cat = getCat(id);
+  if (cat && cat.name && cat.name.toLowerCase().trim() === 'savings') return true;
+  return false;
+}
+
 function getCatBadge(cat, size = 14) {
   if (!cat) return '';
   const id = (cat.id || '').toLowerCase();
@@ -1498,26 +1507,28 @@ async function renderDashboard() {
   const expenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === month);
   const prevExpenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === prevMonth);
 
-  // Separate Income (Credit) vs Expenses (Debit)
+  // Separate Income (Credit), Living Expenses (Debit excluding Savings), and Savings (Debit in Savings category)
   const incomeExpenses = expenses.filter(e => e.type === 'credit');
-  const debitExpenses = expenses.filter(e => e.type !== 'credit');
+  const savingsExpenses = expenses.filter(e => e.type !== 'credit' && isSavingsCategory(e.category));
+  const debitExpenses = expenses.filter(e => e.type !== 'credit' && !isSavingsCategory(e.category));
 
   const incomeTotal = incomeExpenses.reduce((s, e) => s + e.amount, 0);
+  const savingsTotal = savingsExpenses.reduce((s, e) => s + e.amount, 0);
   const expenseTotal = debitExpenses.reduce((s, e) => s + e.amount, 0);
   const netBalance = incomeTotal - expenseTotal;
 
-  // Previous month comparison
+  // Previous month comparison (excluding savings for living expense trends)
   const prevIncomeTotal = prevExpenses.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
-  const prevExpenseTotal = prevExpenses.filter(e => e.type !== 'credit').reduce((s, e) => s + e.amount, 0);
+  const prevExpenseTotal = prevExpenses.filter(e => e.type !== 'credit' && !isSavingsCategory(e.category)).reduce((s, e) => s + e.amount, 0);
   const expenseDiff = expenseTotal - prevExpenseTotal;
   const diffPct = prevExpenseTotal > 0 ? ((expenseDiff / prevExpenseTotal) * 100).toFixed(0) : '';
 
-  // Savings rate calculation
+  // Savings rate calculation explicitly linked to tracked savings in the savings category
   const savingsRate = incomeTotal > 0
-    ? Math.max(0, ((incomeTotal - expenseTotal) / incomeTotal) * 100).toFixed(1)
-    : '0.0';
+    ? ((savingsTotal / incomeTotal) * 100).toFixed(1)
+    : (savingsTotal > 0 ? '100.0' : '0.0');
 
-  // Category breakdown for expenses
+  // Category breakdown for living expenses (excluding savings)
   const byCat = {};
   for (const e of debitExpenses) {
     byCat[e.category] = (byCat[e.category] || 0) + e.amount;
@@ -1648,7 +1659,7 @@ async function renderDashboard() {
       </div>
       <div class="kpi-footer">
         <span class="kpi-badge ${netBalance >= 0 ? 'positive' : 'negative'}">${netBalance >= 0 ? 'Surplus' : 'Deficit'}</span>
-        <span>${expenses.length === 0 ? 'No activity this month' : (netBalance >= 0 ? 'Cash flow positive' : 'Expenses exceed income')}</span>
+        <span>${expenses.length === 0 ? 'No activity this month' : (savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved · ${fmtCurrency(incomeTotal - expenseTotal - savingsTotal, true)} cash left` : (netBalance >= 0 ? 'Cash flow positive' : 'Expenses exceed income'))}</span>
       </div>
     </div>
 
@@ -1684,7 +1695,7 @@ async function renderDashboard() {
       <div class="kpi-val">${fmtCurrency(expenseTotal, true)}</div>
       <div class="kpi-footer">
         ${diffPct ? `<span class="kpi-badge ${expenseDiff <= 0 ? 'positive' : 'negative'}">${expenseDiff <= 0 ? '▼' : '▲'} ${Math.abs(diffPct)}% vs prev</span>` : '<span class="kpi-badge neutral">●</span>'}
-        <span>${debitExpenses.length} expense${debitExpenses.length !== 1 ? 's' : ''}</span>
+        <span>${debitExpenses.length} living expense${debitExpenses.length !== 1 ? 's' : ''}</span>
       </div>
     </div>
 
@@ -1699,10 +1710,10 @@ async function renderDashboard() {
           </svg>
         </div>
       </div>
-      <div class="kpi-val">${savingsRate}%</div>
+      <div class="kpi-val">${incomeTotal > 0 ? `${savingsRate}%` : (savingsTotal > 0 ? fmtCurrency(savingsTotal, true) : '0.0%')}</div>
       <div class="kpi-footer">
-        <span class="kpi-badge ${parseFloat(savingsRate) >= 20 ? 'positive' : parseFloat(savingsRate) > 0 ? 'neutral' : 'negative'}">●</span>
-        <span>${incomeTotal > 0 ? (parseFloat(savingsRate) >= 20 ? 'Target met (≥20%)' : 'Below 20% target') : 'Log income to track'}</span>
+        <span class="kpi-badge ${parseFloat(savingsRate) >= 20 ? 'positive' : (savingsTotal > 0 ? 'positive' : 'neutral')}">●</span>
+        <span>${savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved${incomeTotal > 0 ? ` (${savingsRate}% of income)` : ''}` : (incomeTotal > 0 ? 'No savings tracked' : 'Track via Savings category')}</span>
       </div>
     </div>
   </div>
@@ -1868,7 +1879,7 @@ function renderDonutChart(expenses) {
     state.chart = null;
   }
 
-  const debitExpenses = expenses.filter(e => e.type !== 'credit');
+  const debitExpenses = expenses.filter(e => e.type !== 'credit' && !isSavingsCategory(e.category));
   const byCat = {};
   for (const e of debitExpenses) {
     byCat[e.category] = (byCat[e.category] || 0) + e.amount;
@@ -1939,7 +1950,7 @@ function renderCashFlowChart(expenses, month) {
     if (d >= 0 && d < days) {
       if (e.type === 'credit') {
         incomeByDay[d] += e.amount;
-      } else {
+      } else if (!isSavingsCategory(e.category)) {
         expenseByDay[d] += e.amount;
       }
     }
@@ -2776,14 +2787,15 @@ async function renderBudgets() {
   const budgets = await db.getAll('budgets');
   const monthBudgets = budgets.filter(b => b.month === month);
   const expenses = await db.getByIndex('expenses', 'month', month);
-  const debitExpenses = expenses.filter(e => e.type !== 'credit');
+  const allDebitExpenses = expenses.filter(e => e.type !== 'credit');
   const spentByCat = {};
-  for (const e of debitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
+  for (const e of allDebitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
 
-  const totalSpent = debitExpenses.reduce((s, e) => s + e.amount, 0);
-
-  // Monthly limit is always derived: the sum of all category budgets
-  const overallBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
+  // Monthly spending limit derives from living expense category budgets (excluding savings)
+  const livingBudgets = monthBudgets.filter(b => !isSavingsCategory(b.categoryId));
+  const livingDebitExpenses = allDebitExpenses.filter(e => !isSavingsCategory(e.category));
+  const overallBudget = (livingBudgets.length > 0 ? livingBudgets : monthBudgets).reduce((s, b) => s + b.amount, 0);
+  const totalSpent = (livingBudgets.length > 0 ? livingDebitExpenses : allDebitExpenses).reduce((s, e) => s + e.amount, 0);
 
   // Overall budget card calculation with accurate exact-limit logic
   const ovPct = overallBudget > 0 ? (totalSpent / overallBudget) * 100 : 0;
@@ -2972,9 +2984,9 @@ async function mountBudgets() {
   const budgets = await db.getAll('budgets');
   const monthBudgets = budgets.filter(b => b.month === month);
   const expenses = await db.getByIndex('expenses', 'month', month);
-  const debitExpenses = expenses.filter(e => e.type !== 'credit');
+  const allDebitExpenses = expenses.filter(e => e.type !== 'credit');
   const spentByCat = {};
-  for (const e of debitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
+  for (const e of allDebitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
 
   renderBudgetComparisonChart(monthBudgets, spentByCat);
 

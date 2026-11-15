@@ -260,11 +260,11 @@ a {
 }
 
 .brand-name {
-  font-size: 18px;
-  font-weight: 600;
-  font-family: var(--font-serif);
+  font-size: 16.5px;
+  font-weight: 700;
+  font-family: var(--font);
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .brand-badge {
@@ -708,13 +708,13 @@ a {
 }
 
 .kpi-val {
-  font-size: 27px;
-  font-weight: 600;
+  font-size: 26px;
+  font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-  font-family: var(--font-serif);
+  line-height: 1.15;
+  font-family: var(--font);
 }
 
 .kpi-footer {
@@ -759,8 +759,6 @@ a {
 .kpi-card.kpi-savings .kpi-icon-wrap {
   background: var(--gold-light);
   color: var(--gold);
-}
-  color: var(--warning);
 }
 
 .kpi-badge {
@@ -860,10 +858,10 @@ a {
 }
 .donut-center-amount {
   font-size: 20px;
-  font-weight: 600;
-  font-family: var(--font-serif);
+  font-weight: 700;
+  font-family: var(--font);
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1978,11 +1976,11 @@ a {
   margin-bottom: 20px;
 }
 .view-title {
-  font-size: 26px;
-  font-weight: 600;
-  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font);
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 /* Overall Monthly Limit Card */
@@ -2018,12 +2016,12 @@ a {
   margin-bottom: 4px;
 }
 .overall-budget-amount {
-  font-size: 34px;
-  font-weight: 600;
+  font-size: 32px;
+  font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  font-family: var(--font-serif);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  font-family: var(--font);
   font-variant-numeric: tabular-nums;
   margin-top: 6px;
 }

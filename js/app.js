@@ -1147,35 +1147,59 @@ async function bootstrap() {
   }
   state.categories = await db.getAll('categories');
   state.merchantRules = await db.getAll('merchant_rules');
-  state.currentMonth = today().slice(0, 7);
+
+  // Smart active month selection:
+  // If current month has 0 transactions but an earlier/later month has transactions,
+  // open to the latest month that actually has data!
+  const allExpenses = await db.getAll('expenses');
+  const thisMonthStr = today().slice(0, 7);
+  if (allExpenses.length > 0) {
+    const hasThisMonth = allExpenses.some(e => (e.month || e.date?.slice(0, 7)) === thisMonthStr);
+    if (hasThisMonth) {
+      state.currentMonth = thisMonthStr;
+    } else {
+      const sorted = [...allExpenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const latestMonth = sorted[0].month || sorted[0].date?.slice(0, 7);
+      state.currentMonth = latestMonth || thisMonthStr;
+    }
+  } else {
+    state.currentMonth = thisMonthStr;
+  }
 }
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
 async function loadDemoData() {
   const now = new Date();
   const y = now.getFullYear(), mo = now.getMonth();
+  const curYm = `${y}-${String(mo + 1).padStart(2, '0')}`;
+  const prevY = mo === 0 ? y - 1 : y;
+  const prevMo = mo === 0 ? 12 : mo;
+  const prevYm = `${prevY}-${String(prevMo).padStart(2, '0')}`;
+
   const demo = [
-    { amount: 450, category: 'food', merchant: 'Swiggy', note: 'Dinner', method: 'UPI', date: `${y}-${String(mo+1).padStart(2,'0')}-05` },
-    { amount: 1200, category: 'groceries', merchant: 'BigBasket', note: '', method: 'Card', date: `${y}-${String(mo+1).padStart(2,'0')}-07` },
-    { amount: 250, category: 'transport', merchant: 'Uber', note: 'Office cab', method: 'UPI', date: `${y}-${String(mo+1).padStart(2,'0')}-08` },
-    { amount: 3500, category: 'shopping', merchant: 'Amazon', note: 'Books', method: 'Card', date: `${y}-${String(mo+1).padStart(2,'0')}-10` },
-    { amount: 899, category: 'entertainment', merchant: 'Netflix', note: '', method: 'Card', date: `${y}-${String(mo+1).padStart(2,'0')}-12` },
-    { amount: 150, category: 'food', merchant: 'Zomato', note: 'Lunch', method: 'UPI', date: `${y}-${String(mo+1).padStart(2,'0')}-14` },
-    { amount: 12000, category: 'rent', merchant: 'Landlord', note: '', method: 'UPI', date: `${y}-${String(mo+1).padStart(2,'0')}-01` },
-    { amount: 500, category: 'health', merchant: 'Apollo Pharmacy', note: '', method: 'Cash', date: `${y}-${String(mo+1).padStart(2,'0')}-15` },
-    { amount: 350, category: 'transport', merchant: 'Rapido', note: '', method: 'UPI', date: `${y}-${String(mo+1).padStart(2,'0')}-17` },
-    { amount: 2000, category: 'education', merchant: 'Udemy', note: 'Course', method: 'Card', date: `${y}-${String(mo+1).padStart(2,'0')}-18` },
-    { amount: 800, category: 'food', merchant: 'Restaurant', note: 'Dinner with family', method: 'Card', date: `${y}-${String(mo+1).padStart(2,'0')}-20` },
-    { amount: 599, category: 'bills', merchant: 'Jio', note: 'Recharge', method: 'UPI', date: `${y}-${String(mo+1).padStart(2,'0')}-22` },
-    // Previous month
-    { amount: 400, category: 'food', merchant: 'Swiggy', note: '', method: 'UPI', date: `${y}-${String(mo).padStart(2,'0')}-15` },
-    { amount: 1100, category: 'groceries', merchant: 'DMart', note: '', method: 'Cash', date: `${y}-${String(mo).padStart(2,'0')}-10` },
-    { amount: 12000, category: 'rent', merchant: 'Landlord', note: '', method: 'UPI', date: `${y}-${String(mo).padStart(2,'0')}-01` },
-    { amount: 300, category: 'transport', merchant: 'Ola', note: '', method: 'UPI', date: `${y}-${String(mo).padStart(2,'0')}-20` },
-  ].filter(e => {
-    const [, emo] = e.date.split('-').map(Number);
-    return emo >= 1 && emo <= 12;
-  });
+    // Current Month Income (Credits)
+    { amount: 75000, category: 'other', merchant: 'Acme Corp', note: 'Monthly Salary', method: 'Transfer', type: 'credit', date: `${curYm}-01` },
+    { amount: 12500, category: 'other', merchant: 'Client Consultancy', note: 'Project milestone', method: 'UPI', type: 'credit', date: `${curYm}-10` },
+
+    // Current Month Expenses (Debits)
+    { amount: 18000, category: 'rent', merchant: 'Prestige Apartments', note: 'House Rent', method: 'Transfer', type: 'debit', date: `${curYm}-02` },
+    { amount: 4800, category: 'groceries', merchant: 'Nature Basket', note: 'Monthly groceries', method: 'Card', type: 'debit', date: `${curYm}-04` },
+    { amount: 650, category: 'food', merchant: 'Swiggy', note: 'Dinner', method: 'UPI', type: 'debit', date: `${curYm}-06` },
+    { amount: 350, category: 'transport', merchant: 'Uber', note: 'Office cab', method: 'UPI', type: 'debit', date: `${curYm}-08` },
+    { amount: 3499, category: 'shopping', merchant: 'Amazon', note: 'Wireless headphones', method: 'Card', type: 'debit', date: `${curYm}-11` },
+    { amount: 1199, category: 'bills', merchant: 'Airtel Broadband', note: 'Fibre bill', method: 'UPI', type: 'debit', date: `${curYm}-13` },
+    { amount: 649, category: 'entertainment', merchant: 'Netflix', note: 'Subscription', method: 'Card', type: 'debit', date: `${curYm}-14` },
+    { amount: 420, category: 'food', merchant: 'Zomato', note: 'Lunch', method: 'UPI', type: 'debit', date: `${curYm}-15` },
+
+    // Previous Month Income
+    { amount: 75000, category: 'other', merchant: 'Acme Corp', note: 'Monthly Salary', method: 'Transfer', type: 'credit', date: `${prevYm}-01` },
+
+    // Previous Month Expenses
+    { amount: 18000, category: 'rent', merchant: 'Prestige Apartments', note: '', method: 'Transfer', type: 'debit', date: `${prevYm}-02` },
+    { amount: 5200, category: 'groceries', merchant: 'DMart', note: '', method: 'Cash', type: 'debit', date: `${prevYm}-05` },
+    { amount: 1400, category: 'food', merchant: 'Swiggy', note: '', method: 'UPI', type: 'debit', date: `${prevYm}-12` },
+    { amount: 850, category: 'transport', merchant: 'Ola', note: '', method: 'UPI', type: 'debit', date: `${prevYm}-18` },
+  ];
 
   for (const e of demo) {
     e.month = dateToMonth(e.date);
@@ -1185,15 +1209,17 @@ async function loadDemoData() {
 
   // Sample budgets
   const budgets = [
-    { id: `food-${state.currentMonth}`, categoryId: 'food', month: state.currentMonth, amount: 2000 },
-    { id: `groceries-${state.currentMonth}`, categoryId: 'groceries', month: state.currentMonth, amount: 3000 },
-    { id: `transport-${state.currentMonth}`, categoryId: 'transport', month: state.currentMonth, amount: 1500 },
-    { id: `entertainment-${state.currentMonth}`, categoryId: 'entertainment', month: state.currentMonth, amount: 1000 },
+    { id: `food-${curYm}`, categoryId: 'food', month: curYm, amount: 8000 },
+    { id: `groceries-${curYm}`, categoryId: 'groceries', month: curYm, amount: 10000 },
+    { id: `rent-${curYm}`, categoryId: 'rent', month: curYm, amount: 20000 },
+    { id: `transport-${curYm}`, categoryId: 'transport', month: curYm, amount: 3000 },
+    { id: `shopping-${curYm}`, categoryId: 'shopping', month: curYm, amount: 5000 },
   ];
   for (const b of budgets) await db.put('budgets', b);
 
   await db.setSetting('demo_loaded', true);
-  showToast('Demo data loaded!');
+  state.currentMonth = curYm;
+  showToast('Sample data loaded successfully!');
   renderView();
 }
 
@@ -1309,7 +1335,7 @@ async function renderView() {
   try {
     state.categories = await db.getAll('categories');
     switch (state.view) {
-      case 'dashboard':    main.innerHTML = await renderDashboard(); mountDashboard(); break;
+      case 'dashboard':    main.innerHTML = await renderDashboard(); await mountDashboard(); break;
       case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
       case 'transactions': main.innerHTML = await renderTransactions(); mountTransactions(); break;
       case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
@@ -1328,7 +1354,7 @@ async function renderView() {
   }
 
   revealCards();
-  if (state.view === 'dashboard') initParticles();
+  
 }
 
 // ─── Animation helpers ────────────────────────────────────────────────────────
@@ -1398,49 +1424,6 @@ function triggerAddBurst(btn) {
   }
 }
 
-function initParticles() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const dashView = document.querySelector('.view-dashboard');
-  if (!dashView) return;
-  const canvas = document.createElement('canvas');
-  canvas.id = 'particles-canvas';
-  dashView.insertBefore(canvas, dashView.firstChild);
-  const W = window.innerWidth, H = window.innerHeight;
-  canvas.width = W; canvas.height = H;
-  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const maxOp = isDark ? 0.13 : 0.08;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#c084fc';
-  const syms = ['₹', '$', '○'];
-  const pts = Array.from({ length: 18 }, () => ({
-    x: Math.random() * W, y: Math.random() * H,
-    sym: syms[Math.floor(Math.random() * 3)],
-    sz: 12 + Math.random() * 10,
-    spd: 0.3 + Math.random() * 0.5,
-    op: Math.random() * maxOp,
-    dir: Math.random() > 0.5 ? 1 : -1,
-  }));
-  const ctx2d = canvas.getContext('2d');
-  let last = 0;
-  function loop(ts) {
-    _particlesRAF = requestAnimationFrame(loop);
-    if (ts - last < 33) return; // ~30fps
-    last = ts;
-    ctx2d.clearRect(0, 0, W, H);
-    ctx2d.fillStyle = accent;
-    for (const p of pts) {
-      p.y -= p.spd;
-      p.op += p.dir * 0.002;
-      if (p.op >= maxOp) p.dir = -1;
-      if (p.op <= 0) { p.x = Math.random() * W; p.y = H + 20; p.op = 0; p.dir = 1; p.spd = 0.3 + Math.random() * 0.5; }
-      ctx2d.globalAlpha = Math.max(0, p.op);
-      ctx2d.font = `${p.sz}px sans-serif`;
-      ctx2d.fillText(p.sym, p.x, p.y);
-    }
-    ctx2d.globalAlpha = 1;
-  }
-  _particlesRAF = requestAnimationFrame(loop);
-}
-
 function initCustomCursor() {
   // Using native OS cursor for optimal accessibility, precision, and performance
 }
@@ -1453,8 +1436,9 @@ async function renderDashboard() {
     ? `${y - 1}-12`
     : `${y}-${String(m - 1).padStart(2, '0')}`;
 
-  const expenses = await db.getByIndex('expenses', 'month', month);
-  const prevExpenses = await db.getByIndex('expenses', 'month', prevMonth);
+  const allExpenses = await db.getAll('expenses');
+  const expenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === month);
+  const prevExpenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === prevMonth);
 
   // Separate Income (Credit) vs Expenses (Debit)
   const incomeExpenses = expenses.filter(e => e.type === 'credit');
@@ -1473,7 +1457,7 @@ async function renderDashboard() {
   // Savings rate calculation
   const savingsRate = incomeTotal > 0
     ? Math.max(0, ((incomeTotal - expenseTotal) / incomeTotal) * 100).toFixed(1)
-    : (expenseTotal === 0 ? '100.0' : '0.0');
+    : '0.0';
 
   // Category breakdown for expenses
   const byCat = {};
@@ -1496,12 +1480,50 @@ async function renderDashboard() {
       `;
     }).join('');
 
+  // Find latest month with data if this month is empty
+  let otherMonthBanner = '';
+  if (expenses.length === 0 && allExpenses.length > 0) {
+    const sorted = [...allExpenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const latestAvailableMonth = sorted[0].month || sorted[0].date?.slice(0, 7);
+    const countInLatest = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === latestAvailableMonth).length;
+    otherMonthBanner = `
+      <div class="dashboard-card" style="margin-bottom:20px;padding:22px 20px;border-left:4px solid var(--brand);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:3px">No transactions recorded for ${monthLabel(month)}</div>
+          <div style="font-size:12.5px;color:var(--text3)">You have ${countInLatest} transaction${countInLatest !== 1 ? 's' : ''} in <strong>${monthLabel(latestAvailableMonth)}</strong>.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-primary" id="btn-jump-to-data-month" data-month="${latestAvailableMonth}">View ${monthLabel(latestAvailableMonth)} →</button>
+          <button class="btn-secondary" id="btn-add-this-month">+ Add in ${monthLabel(month)}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Welcome banner if whole database is completely empty
+  let emptyDbBanner = '';
+  if (allExpenses.length === 0) {
+    emptyDbBanner = `
+      <div class="dashboard-card" style="margin-bottom:20px;text-align:center;padding:36px 20px">
+        <div style="font-size:42px;margin-bottom:12px">💳</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px">Welcome to Expenses</div>
+        <p style="color:var(--text3);font-size:13.5px;max-width:480px;margin:0 auto 20px;line-height:1.5">
+          Your personal finance dashboard is ready. Add your first transaction, parse a bank alert SMS/email, or load sample data to explore charts and insights.
+        </p>
+        <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
+          <button class="btn-primary" id="btn-empty-add-txn">+ Add Transaction</button>
+          <button class="btn-secondary" id="btn-empty-import">📥 Import Bank Alerts</button>
+          <button class="btn-secondary" id="btn-empty-load-demo">✨ Load Sample Data</button>
+        </div>
+      </div>
+    `;
+  }
+
   // Recent 5 transactions
-  const allExpenses = await db.getAll('expenses');
-  const recent5 = [...allExpenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 5);
+  const recent5 = [...allExpenses].sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5);
 
   const recentItemsHTML = recent5.length === 0
-    ? '<div class="empty-state" style="padding:28px 0"><div class="empty-icon">💳</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Import from your bank or tap + Add Transaction</div></div>'
+    ? '<div class="empty-state" style="padding:28px 0"><div class="empty-icon">💳</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Tap "+ Add Transaction" or "Load Sample Data" above</div></div>'
     : recent5.map(e => {
         const cat = getCat(e.category);
         const isCredit = e.type === 'credit';
@@ -1546,6 +1568,8 @@ async function renderDashboard() {
   return `
 <div class="view-dashboard">
   ${storageBanner}
+  ${emptyDbBanner}
+  ${otherMonthBanner}
 
   <!-- Top 4-Card KPI Summary Grid (Linear / Monarch Style) -->
   <div class="kpi-grid">
@@ -1560,7 +1584,7 @@ async function renderDashboard() {
       </div>
       <div class="kpi-footer">
         <span class="kpi-badge ${netBalance >= 0 ? 'positive' : 'negative'}">${netBalance >= 0 ? 'Surplus' : 'Deficit'}</span>
-        <span>${netBalance >= 0 ? 'Cash flow positive' : 'Expenses exceed income'}</span>
+        <span>${expenses.length === 0 ? 'No activity this month' : (netBalance >= 0 ? 'Cash flow positive' : 'Expenses exceed income')}</span>
       </div>
     </div>
 
@@ -1619,7 +1643,7 @@ async function renderDashboard() {
       ${debitExpenses.length === 0 ? `
         <div class="empty-state" style="padding:48px 0">
           <div class="empty-icon">📊</div>
-          <div class="empty-title">No expenses this month</div>
+          <div class="empty-title">No expenses in ${monthLabel(month)}</div>
           <div class="empty-sub">Tap "+ Add Transaction" or import bank emails to begin</div>
         </div>
       ` : `
@@ -1683,7 +1707,8 @@ async function renderDashboard() {
 
 async function mountDashboard() {
   const month = state.currentMonth;
-  const expenses = await db.getByIndex('expenses', 'month', month);
+  const allExpenses = await db.getAll('expenses');
+  const expenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === month);
 
   document.getElementById('dismiss-storage-banner')?.addEventListener('click', () => {
     document.getElementById('storage-banner')?.remove();
@@ -1694,6 +1719,23 @@ async function mountDashboard() {
   renderDonutChart(expenses);
   renderCashFlowChart(expenses, month);
 
+  // Empty state actions
+  document.getElementById('btn-empty-add-txn')?.addEventListener('click', () => openAddModal());
+  document.getElementById('btn-empty-import')?.addEventListener('click', () => openImportModal());
+  document.getElementById('btn-empty-load-demo')?.addEventListener('click', async () => {
+    await loadDemoData();
+  });
+
+  // Jump to latest month button
+  document.getElementById('btn-jump-to-data-month')?.addEventListener('click', e => {
+    const targetMonth = e.currentTarget.dataset.month;
+    if (targetMonth) {
+      state.currentMonth = targetMonth;
+      renderView();
+    }
+  });
+  document.getElementById('btn-add-this-month')?.addEventListener('click', () => openAddModal());
+
   // Event handlers
   document.getElementById('dash-view-all-txns')?.addEventListener('click', () => setView('transactions'));
   document.getElementById('dash-view-all-txns-link')?.addEventListener('click', () => setView('transactions'));
@@ -1703,7 +1745,7 @@ async function mountDashboard() {
     el.addEventListener('click', async () => {
       const catId = el.dataset.cat;
       const cat = getCat(catId);
-      const catExps = expenses.filter(e => e.category === catId).sort((a,b) => b.date.localeCompare(a.date));
+      const catExps = expenses.filter(e => e.category === catId).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
       const total = catExps.reduce((s, e) => s + e.amount, 0);
       document.getElementById('cat-modal-content').innerHTML = `
         <div class="modal-title">${cat.emoji} ${cat.name} — ${fmtCurrency(total)}</div>
@@ -1742,7 +1784,10 @@ async function mountDashboard() {
 function renderDonutChart(expenses) {
   const canvas = document.getElementById('donutChart');
   if (!canvas || !window.Chart) return;
-  if (state.chart) { state.chart.destroy(); state.chart = null; }
+  if (state.chart && typeof state.chart.destroy === 'function') {
+    try { state.chart.destroy(); } catch (_) {}
+    state.chart = null;
+  }
 
   const debitExpenses = expenses.filter(e => e.type !== 'credit');
   const byCat = {};
@@ -1755,56 +1800,63 @@ function renderDonutChart(expenses) {
   const total = entries.reduce((s, [, v]) => s + v, 0);
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-  state.chart = new Chart(canvas, {
-    type: 'doughnut',
-    data: {
-      labels: entries.map(([id]) => getCat(id).name),
-      datasets: [{
-        data: entries.map(([, v]) => v),
-        backgroundColor: entries.map(([id]) => getCat(id).color),
-        borderWidth: 2,
-        borderColor: isDark ? '#141419' : '#ffffff',
-        hoverOffset: 4,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '72%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: isDark ? 'rgba(20, 20, 26, 0.96)' : 'rgba(15, 23, 42, 0.95)',
-          titleColor: '#fff',
-          bodyColor: '#cbd5e1',
-          padding: 10,
-          cornerRadius: 8,
-          borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-          borderWidth: 1,
-          callbacks: {
-            label: ctx => {
-              const val = ctx.raw || 0;
-              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
-              return ` ${fmtCurrency(val, true)} (${pct}%)`;
+  try {
+    state.chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: entries.map(([id]) => getCat(id).name),
+        datasets: [{
+          data: entries.map(([, v]) => v),
+          backgroundColor: entries.map(([id]) => getCat(id).color),
+          borderWidth: 2,
+          borderColor: isDark ? '#141419' : '#ffffff',
+          hoverOffset: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '72%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: isDark ? 'rgba(20, 20, 26, 0.96)' : 'rgba(15, 23, 42, 0.95)',
+            titleColor: '#fff',
+            bodyColor: '#cbd5e1',
+            padding: 10,
+            cornerRadius: 8,
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+            borderWidth: 1,
+            callbacks: {
+              label: ctx => {
+                const val = ctx.raw || 0;
+                const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                return ` ${fmtCurrency(val, true)} (${pct}%)`;
+              }
             }
           }
         }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.warn('Donut chart render error:', err);
+  }
 }
 
 function renderCashFlowChart(expenses, month) {
   const canvas = document.getElementById('cashFlowChart');
   if (!canvas || !window.Chart) return;
-  if (state.barChart) { state.barChart.destroy(); state.barChart = null; }
+  if (state.barChart && typeof state.barChart.destroy === 'function') {
+    try { state.barChart.destroy(); } catch (_) {}
+    state.barChart = null;
+  }
 
   const days = daysInMonth(month);
   const incomeByDay = Array(days).fill(0);
   const expenseByDay = Array(days).fill(0);
 
   for (const e of expenses) {
-    const d = parseInt(e.date.slice(8, 10), 10) - 1;
+    const d = parseInt((e.date || '').slice(8, 10), 10) - 1;
     if (d >= 0 && d < days) {
       if (e.type === 'credit') {
         incomeByDay[d] += e.amount;
@@ -1818,62 +1870,66 @@ function renderCashFlowChart(expenses, month) {
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
   const textColor = isDark ? '#64748b' : '#94a3b8';
 
-  state.barChart = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels: Array.from({ length: days }, (_, i) => i + 1),
-      datasets: [
-        {
-          label: 'Income',
-          data: incomeByDay,
-          backgroundColor: 'rgba(16, 185, 129, 0.85)',
-          borderRadius: 3,
-          barPercentage: 0.8,
-          categoryPercentage: 0.85,
+  try {
+    state.barChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: Array.from({ length: days }, (_, i) => i + 1),
+        datasets: [
+          {
+            label: 'Income',
+            data: incomeByDay,
+            backgroundColor: 'rgba(16, 185, 129, 0.85)',
+            borderRadius: 3,
+            barPercentage: 0.8,
+            categoryPercentage: 0.85,
+          },
+          {
+            label: 'Expenses',
+            data: expenseByDay,
+            backgroundColor: 'rgba(99, 102, 241, 0.85)',
+            borderRadius: 3,
+            barPercentage: 0.8,
+            categoryPercentage: 0.85,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: isDark ? 'rgba(20, 20, 26, 0.96)' : 'rgba(15, 23, 42, 0.95)',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${fmtCurrency(ctx.raw, true)}`
+            }
+          }
         },
-        {
-          label: 'Expenses',
-          data: expenseByDay,
-          backgroundColor: 'rgba(99, 102, 241, 0.85)',
-          borderRadius: 3,
-          barPercentage: 0.8,
-          categoryPercentage: 0.85,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: isDark ? 'rgba(20, 20, 26, 0.96)' : 'rgba(15, 23, 42, 0.95)',
-          padding: 10,
-          cornerRadius: 8,
-          callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: ${fmtCurrency(ctx.raw, true)}`
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: textColor, maxTicksLimit: 15, font: { size: 10 } }
+          },
+          y: {
+            grid: { color: gridColor },
+            border: { display: false },
+            ticks: {
+              color: textColor,
+              font: { size: 10 },
+              callback: v => '₹' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)
+            },
+            beginAtZero: true
           }
         }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          border: { display: false },
-          ticks: { color: textColor, maxTicksLimit: 15, font: { size: 10 } }
-        },
-        y: {
-          grid: { color: gridColor },
-          border: { display: false },
-          ticks: {
-            color: textColor,
-            font: { size: 10 },
-            callback: v => '₹' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)
-          },
-          beginAtZero: true
-        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.warn('Cash flow chart render error:', err);
+  }
 }
 
 // ─── Add Expense Form ─────────────────────────────────────────────────────────
@@ -3544,4 +3600,8 @@ async function init() {
   renderView();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

@@ -443,6 +443,7 @@ function stripHtmlTags(html) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -460,7 +461,10 @@ function extractEmailText(payload) {
   for (const part of payload.parts || []) {
     if (part.mimeType === 'text/plain' && part.body?.data) {
       const t = decode(part.body.data);
-      if (t) return t;
+      if (t && t.trim().length > 30 && !/view\s+this\s+email\s+in\s+(?:a\s+)?browser|view\s+as\s+web\s*page/i.test(t)) {
+        return t;
+      }
+      if (t) htmlFallback = htmlFallback || t;
     }
     if (part.mimeType === 'text/html' && part.body?.data) {
       htmlFallback = htmlFallback || stripHtmlTags(decode(part.body.data));
@@ -471,44 +475,237 @@ function extractEmailText(payload) {
   return htmlFallback;
 }
 
-function parseHdfcEmail(body, emailDateMs) {
-  if (!body) return null;
-  if (/is\s+credited/i.test(body)) return null;
-  if (!/is\s+debited/i.test(body)) return null;
+const MONTH_MAP = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+};
 
-  // Amount: "Rs.70.00 is debited" or "Rs 70.00 is debited"
-  const amtMatch = body.match(/Rs\.?\s*([\d,]+(?:\.\d{1,2})?)\s+is\s+debited/i);
-  if (!amtMatch) return null;
-  const amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+function normalizeDate(rawDate, fallbackDateMs) {
+  if (!rawDate) {
+    return new Date(fallbackDateMs || Date.now()).toISOString().slice(0, 10);
+  }
+  let m = rawDate.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
+  if (m) {
+    const [, dd, mm, yy] = m;
+    const year = yy.length <= 2 ? '20' + yy.padStart(2, '0') : yy;
+    return `${year}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  }
+  m = rawDate.match(/(\d{1,2})[- ]([A-Za-z]{3})[- ](\d{2,4})/);
+  if (m) {
+    const [, dd, mon, yy] = m;
+    const mm = MONTH_MAP[mon.toLowerCase()] || '01';
+    const year = yy.length <= 2 ? '20' + yy.padStart(2, '0') : yy;
+    return `${year}-${mm}-${dd.padStart(2, '0')}`;
+  }
+  return new Date(fallbackDateMs || Date.now()).toISOString().slice(0, 10);
+}
+
+function cleanMerchant(str) {
+  if (!str) return '';
+  return str
+    .replace(/^[@\-_.:\s"'“”‘’]+|[@\-_.:\s"'“”‘’]+$/g, '')
+    .replace(/^(?:vpa|to|at)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isCreditEmail(text, subject = '') {
+  const combined = `${subject} ${text}`;
+  const withoutNotCredited = combined.replace(/not\s+credited/gi, '');
+  if (/(?:account|a\/c|card)\s+(?:has been|is|was)?\s*credited/i.test(withoutNotCredited)) return true;
+  if (/(?:credited|received)\s+(?:with|by|for)?\s*(?:Rs\.?|INR|₹)/i.test(withoutNotCredited)) return true;
+  if (/(?:Rs\.?|INR|₹)\s*[\d,]+(?:\.\d{1,2})?\s+(?:is|has been|was)?\s*credited/i.test(withoutNotCredited)) return true;
+  return false;
+}
+
+function detectBank(from = '', subject = '', body = '') {
+  const f = (from || '').toLowerCase();
+  const sub = (subject || '').toLowerCase();
+  const b = (body || '').toLowerCase();
+
+  // 1. Check sender address first (most authoritative)
+  if (f.includes('hdfc')) return 'HDFC';
+  if (f.includes('sbi') || f.includes('sbicard')) return 'SBI';
+  if (f.includes('icici')) return 'ICICI';
+  if (f.includes('unionbank') || f.includes('ubi')) return 'Union Bank';
+  if (f.includes('sliceit') || f.includes('slice')) return 'Slice';
+  if (f.includes('axis')) return 'Axis';
+  if (f.includes('kotak')) return 'Kotak';
+  if (f.includes('idfc')) return 'IDFC FIRST';
+  if (f.includes('onecard') || f.includes('fplabs')) return 'OneCard';
+  if (f.includes('canarabank')) return 'Canara Bank';
+  if (f.includes('pnb')) return 'PNB';
+  if (f.includes('bankofbaroda') || f.includes('bob')) return 'Bank of Baroda';
+  if (f.includes('indusind')) return 'IndusInd';
+  if (f.includes('federalbank')) return 'Federal Bank';
+  if (f.includes('yesbank')) return 'Yes Bank';
+
+  // 2. Check subject line & body
+  const checkStr = (s) => {
+    if (s.includes('hdfc')) return 'HDFC';
+    if (s.includes('state bank') || s.includes('sbi') || s.includes('sbicard')) return 'SBI';
+    if (s.includes('icici')) return 'ICICI';
+    if (s.includes('union bank') || s.includes('ubi')) return 'Union Bank';
+    if (s.includes('slice')) return 'Slice';
+    if (s.includes('axis')) return 'Axis';
+    if (s.includes('kotak')) return 'Kotak';
+    if (s.includes('idfc')) return 'IDFC FIRST';
+    if (s.includes('onecard')) return 'OneCard';
+    if (s.includes('canara')) return 'Canara Bank';
+    if (s.includes('pnb') || s.includes('punjab national')) return 'PNB';
+    if (s.includes('bank of baroda') || s.includes('bob')) return 'Bank of Baroda';
+    if (s.includes('indusind')) return 'IndusInd';
+    if (s.includes('federal bank')) return 'Federal Bank';
+    if (s.includes('yes bank')) return 'Yes Bank';
+    return null;
+  };
+
+  const fromSub = checkStr(sub);
+  if (fromSub) return fromSub;
+
+  const fromBody = checkStr(b);
+  if (fromBody) return fromBody;
+
+  const match = `${subject} ${body}`.match(/\b([A-Z][a-zA-Z]+)\s+Bank\b/);
+  if (match) return `${match[1]} Bank`;
+
+  return 'Bank';
+}
+
+function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from = '') {
+  if (!body) return null;
+
+  // 1. Skip obvious credits
+  if (isCreditEmail(body, subject)) return null;
+
+  // 2. Identify Bank
+  const bank = detectBank(from, subject, body);
+
+  // Strip balance / credit limit amounts so they are never parsed as expense amounts
+  const cleanBody = body.replace(/(?:available\s+balance|avl\s+bal|ledger\s+balance|total\s+balance|credit\s+limit|avl\s+limit|available\s+limit).*?(?:Rs\.?|INR|₹)\s*[\d,]+(?:\.\d{1,2})?/gi, '');
+
+  // 3. Extract Amount
+  let amount = null;
+  const amtPatterns = [
+    /(?:debited\s+(?:by|for|with)|is\s+debited|has\s+been\s+debited|was\s+debited|debited\s+from.*?for)\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)\s+(?:is|has been|was)?\s*debited/i,
+    /(?:spent|transaction\s+(?:of|for)|payment\s+(?:of|for)|purchase\s+(?:of|for))\s+(?:(?:an\s+amount\s+of\s+)?(?:Rs\.?|INR|₹))?\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)\s+(?:spent|was spent|deducted)/i,
+    /(?:debited|deducted|transferred|paid)\s+(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/i,
+    /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/i
+  ];
+
+  const hasSpendIntent = /(?:debited|deducted|spent|paid|transferred to|transfer to|payment of|transaction of|purchase at)/i.test(body) ||
+                         /(?:debited|spent|paid|deducted)/i.test(subject);
+  if (!hasSpendIntent) return null;
+
+  for (const p of amtPatterns) {
+    const m = cleanBody.match(p);
+    if (m && m[1]) {
+      const val = parseFloat(m[1].replace(/,/g, ''));
+      if (val > 0) {
+        amount = val;
+        break;
+      }
+    }
+  }
   if (!amount || amount <= 0) return null;
 
-  // Merchant: VPA xxx@yyy (MERCHANT NAME) → bracket text; else VPA handle
+  // 4. Extract Merchant
   let merchant = '';
+
+  // Pattern A: VPA with bracket name: VPA merchant@bank (Merchant Name)
   const vpaBracket = body.match(/VPA\s+\S+\s+\(([^)]+)\)/i);
   if (vpaBracket) {
     merchant = vpaBracket[1].trim();
-  } else {
+  }
+
+  // Pattern B: ICICI / Union Bank style Info: UPI/123456/Merchant/Bank or towards UPI/123456/Merchant
+  if (!merchant) {
+    const infoMatch = body.match(/(?:Info:\s*|towards\s+)?UPI\/\d+\/([^\/]+)(?:\/|$)/i);
+    if (infoMatch && infoMatch[1]) {
+      merchant = infoMatch[1].trim();
+    }
+  }
+
+  // Pattern C: "Payment of ₹... to MERCHANT was successful"
+  if (!merchant) {
+    const payMatch = body.match(/payment\s+of\s+[^.]+?\bto\s+([A-Za-z0-9 &.'\-]+?)\s+(?:was\s+successful|successful|completed|failed)/i);
+    if (payMatch && payMatch[1]) {
+      merchant = payMatch[1].trim();
+    }
+  }
+
+  // Pattern D: "at MERCHANT using slice" or "at MERCHANT on DD..."
+  if (!merchant) {
+    const atMatch = body.match(/\bat\s+([A-Za-z0-9 &.'\-]+?)(?:\s+using|\s+on|\s+via|\.|\n|$)/i);
+    if (atMatch && atMatch[1]) {
+      merchant = atMatch[1].trim();
+    }
+  }
+
+  // Pattern E: "transfer to MERCHANT" or "transferred to MERCHANT" or "paid to MERCHANT" or "... to MERCHANT"
+  if (!merchant) {
+    const toMatch = body.match(/(?:transfer\s+to|transferred\s+to|paid\s+to|towards|\bto)\s+(?:VPA\s+)?([A-Za-z0-9 &.'\-]+?)(?:\s+Ref|\s+UPI|\s+on|\s+using|\s+via|\.|\n|$)/i);
+    if (toMatch && toMatch[1]) {
+      const candidate = toMatch[1].trim();
+      if (!/^(account|a\/c|your\s+a\/c|bank|\d+)$/i.test(candidate)) {
+        merchant = candidate;
+      }
+    }
+  }
+
+  // Pattern F: Bare VPA handle: VPA merchant@upi
+  if (!merchant) {
     const vpaBare = body.match(/VPA\s+([^\s,.(]+)/i);
-    if (vpaBare) merchant = vpaBare[1].split('@')[0].replace(/[._]/g, ' ').trim();
+    if (vpaBare) {
+      merchant = vpaBare[1].split('@')[0].replace(/[._]/g, ' ').trim();
+    }
   }
 
-  // Date: "on DD-MM-YY" or "on DD-MM-YYYY"
-  let date;
-  const dateMatch = body.match(/\bon\s+(\d{1,2})-(\d{1,2})-(\d{2,4})/i);
-  if (dateMatch) {
-    const [, dd, mm, yy] = dateMatch;
-    const year = yy.length <= 2 ? '20' + yy.padStart(2, '0') : yy;
-    date = `${year}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
-  } else {
-    const d = new Date(emailDateMs);
-    date = d.toISOString().slice(0, 10);
+  merchant = cleanMerchant(merchant);
+  if (!merchant || merchant.toLowerCase() === 'atm') {
+    merchant = /atm|cash withdrawal/i.test(body) ? `${bank} ATM` : `${bank} Debit`;
   }
 
-  // Reference number
-  const refMatch = body.match(/reference\s+no\.?\s*:?\s*(\d+)/i);
-  const refNo = refMatch ? refMatch[1] : null;
+  // 5. Extract Date
+  let date = null;
+  const dateMatch = body.match(/\bon\s+(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[- ][A-Za-z]{3}[- ]\d{2,4})/i) ||
+                    body.match(/\bdate\s*:?\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[- ][A-Za-z]{3}[- ]\d{2,4})/i);
+  date = normalizeDate(dateMatch ? dateMatch[1] : null, emailDateMs);
 
-  return { amount, merchant, date, method: 'UPI', refNo };
+  // 6. Extract Reference Number
+  let refNo = null;
+  const refPatterns = [
+    /(?:reference\s+no\.?|ref\s*no\.?|ref\s*:|upi\s*ref(?:\s*no\.?)?|txn\s*(?:id|#|no\.?)|utr)\s*:?\s*([A-Za-z0-9]{6,25})/i,
+    /UPI\/(\d{10,16})/i,
+    /\(Ref\s+no\s+(\d+)\)/i
+  ];
+  for (const rp of refPatterns) {
+    const rm = body.match(rp);
+    if (rm && rm[1]) {
+      refNo = rm[1].trim();
+      break;
+    }
+  }
+
+  // 7. Method (UPI, Card, NetBanking, Cash)
+  let method = 'UPI';
+  if (/credit\s*card|debit\s*card|spent\s+on\s+your\s+.*?card|card\s+ending/i.test(body)) {
+    method = 'Card';
+  } else if (/netbanking|internet\s+banking|inb|neft|rtgs|imps/i.test(body)) {
+    method = 'NetBanking';
+  } else if (/atm|cash\s+withdrawal/i.test(body)) {
+    method = 'Cash';
+  } else if (/slice/i.test(bank) && !/upi/i.test(body)) {
+    method = 'Card';
+  }
+
+  return { amount, merchant, date, method, refNo, bank };
+}
+
+function parseHdfcEmail(body, emailDateMs) {
+  return parseBankEmail(body, emailDateMs);
 }
 
 function showGmailPreview(transactions, importedRefs) {
@@ -516,15 +713,16 @@ function showGmailPreview(transactions, importedRefs) {
   body.innerHTML = `
 <div class="import-wrap">
   <h2 class="modal-title">Gmail Transactions Found</h2>
-  <p class="import-hint">${transactions.length} new HDFC transaction${transactions.length !== 1 ? 's' : ''}. Uncheck any you don't want to import.</p>
+  <p class="import-hint">${transactions.length} new bank transaction${transactions.length !== 1 ? 's' : ''}. Uncheck any you don't want to import.</p>
   <div class="import-table-wrap">
     <table class="txn-table import-table">
-      <thead><tr><th>✓</th><th>Date</th><th>Merchant</th><th>Amount</th><th>Category</th><th>Method</th></tr></thead>
+      <thead><tr><th>✓</th><th>Date</th><th>Bank</th><th>Merchant</th><th>Amount</th><th>Category</th><th>Method</th></tr></thead>
       <tbody>
         ${transactions.map((t, i) => `
           <tr>
             <td><input type="checkbox" class="gmail-import-check" data-i="${i}" checked></td>
             <td style="white-space:nowrap;font-size:13px;color:var(--text3)">${t.date}</td>
+            <td><span class="bank-pill bank-${(t.bank||'bank').toLowerCase().replace(/\s+/g, '-')}">${t.bank||'Bank'}</span></td>
             <td><input class="import-cell-input" data-i="${i}" data-f="merchant" value="${(t.merchant||'').replace(/"/g,'&quot;')}"></td>
             <td><input class="import-cell-input import-amount" data-i="${i}" data-f="amount" value="${t.amount}" type="number"></td>
             <td>
@@ -565,7 +763,7 @@ function showGmailPreview(transactions, importedRefs) {
       const expense = {
         date: t.date, month: t.date.slice(0,7),
         merchant, amount, category, method: t.method || 'UPI',
-        note: t.refNo ? `Ref: ${t.refNo}` : '',
+        note: [t.bank ? t.bank : '', t.refNo ? `Ref: ${t.refNo}` : ''].filter(Boolean).join(' · '),
         createdAt: Date.now()
       };
       await db.add('expenses', expense);
@@ -609,7 +807,7 @@ async function gmailDoSync(silent = false) {
     const startDate = await db.getSetting('gmail_start_date', '2026-10-07');
     await db.setSetting('gmail_last_sync', null); // clear stale value so it never interferes
     const afterStr = startDate.replace(/-/g, '/');
-    const query = `"is debited from your account" after:${afterStr}`;
+    const query = `(debited OR spent OR deducted OR "payment of" OR "paid to" OR "transferred to" OR "transaction of" OR "debit alert") (Rs OR INR OR "₹") after:${afterStr}`;
 
     // Fetch all pages
     const allMessages = [];
@@ -648,20 +846,23 @@ async function gmailDoSync(silent = false) {
       if (!msgRes.ok) continue;
       const msgData = await msgRes.json();
 
-      const subjectHeader = (msgData.payload?.headers || []).find(h => h.name === 'Subject');
+      const headers = msgData.payload?.headers || [];
+      const subjectHeader = headers.find(h => h.name.toLowerCase() === 'subject');
+      const fromHeader = headers.find(h => h.name.toLowerCase() === 'from');
       const subject = subjectHeader?.value || '(no subject)';
+      const from = fromHeader?.value || '';
       const emailDate = parseInt(msgData.internalDate || Date.now(), 10);
       const dateStr = new Date(emailDate).toISOString().slice(0, 10);
 
       const text = extractEmailText(msgData.payload || {});
 
       // Skip credits
-      if (/is\s+credited/i.test(text)) {
+      if (isCreditEmail(text, subject)) {
         rows.push({ date: dateStr, subject, status: 'credit' });
         continue;
       }
 
-      const result = parseHdfcEmail(text, emailDate);
+      const result = parseBankEmail(text, emailDate, subject, from);
 
       if (!result) {
         rows.push({ date: dateStr, subject, status: 'failed', snippet: text.slice(0, 150) });
@@ -678,7 +879,7 @@ async function gmailDoSync(silent = false) {
       const dupeKey = result.refNo ? result.refNo : `msg:${msg.id}`;
       result._dupeKey = dupeKey;
 
-      if (importedSet.has(dupeKey)) {
+      if (importedSet.has(dupeKey) || (result.refNo && importedSet.has(result.refNo))) {
         rows.push({ date: result.date, subject, status: 'dupe' });
         continue;
       }
@@ -686,7 +887,15 @@ async function gmailDoSync(silent = false) {
       const { categoryId } = await autoCategory(result.merchant);
       result.category = categoryId;
       toImport.push(result);
-      rows.push({ date: result.date, subject, status: 'pending', amount: result.amount, merchant: result.merchant, idx: toImport.length - 1 });
+      rows.push({
+        date: result.date,
+        subject,
+        status: 'pending',
+        amount: result.amount,
+        merchant: result.merchant,
+        bank: result.bank,
+        idx: toImport.length - 1
+      });
     }
 
     state.gmailSyncResult = {
@@ -697,7 +906,10 @@ async function gmailDoSync(silent = false) {
     };
 
     if (toImport.length === 0) {
-      if (!silent) renderView();
+      if (!silent) {
+        renderView();
+        showToast(`Checked ${allMessages.length} emails. No new transactions found.`);
+      }
       return;
     }
 
@@ -2509,8 +2721,8 @@ async function renderSettings() {
 
   <!-- Gmail Sync -->
   <div class="settings-section card">
-    <div class="settings-section-title">📧 Gmail Sync (HDFC)</div>
-    <p class="hint-text" style="margin-bottom:12px">Auto-import HDFC Bank UPI transaction emails from Gmail.</p>
+    <div class="settings-section-title">📧 Gmail Sync (All Bank Accounts)</div>
+    <p class="hint-text" style="margin-bottom:12px">Auto-import debit transaction alert emails from HDFC, SBI, ICICI, Union Bank, Slice &amp; other banks.</p>
     <label class="field-label" style="margin-bottom:4px">Track expenses from</label>
     <input type="date" id="gmail-start-date-input" class="field-input" value="${gmailStartDate}" style="max-width:200px;margin-bottom:12px">
     ${gmailConnected
@@ -2529,12 +2741,12 @@ async function renderSettings() {
                     ${state.gmailSyncResult.rows.map(r => {
                       const icons = { imported:'✅', dupe:'⏭️', credit:'⏭️', failed:'❌', pending:'🔄', before_start:'⏭️', skipped_by_user:'⏭️' };
                       const labels = {
-                        imported: `Imported ₹${r.amount} to ${r.merchant}`,
+                        imported: `Imported [${r.bank||'Bank'}] ₹${r.amount} to ${r.merchant}`,
                         dupe: 'Skipped: already imported',
                         credit: 'Skipped: credit transaction',
                         before_start: 'Skipped: before start date',
                         skipped_by_user: 'Skipped by you',
-                        pending: `Pending ₹${r.amount} to ${r.merchant}`,
+                        pending: `Pending [${r.bank||'Bank'}] ₹${r.amount} to ${r.merchant}`,
                         failed: `FAILED to parse — <code style="font-size:10px;word-break:break-all">${(r.snippet||'').replace(/</g,'&lt;')}</code>`
                       };
                       return `<div class="gmail-result-row gmail-result-${r.status}">
@@ -2547,7 +2759,7 @@ async function renderSettings() {
                 </div>`
            : ''}`
       : `<button class="btn-primary" id="gmail-connect-btn">📧 Connect Gmail</button>
-         <p class="hint-text" style="margin-top:8px">You'll need a Google OAuth 2.0 Client ID. <a href="https://console.cloud.google.com" target="_blank" rel="noopener" style="color:var(--accent)">Create one here</a> → APIs &amp; Services → Credentials → OAuth Client ID → Web application. Add this page's URL as redirect URI.</p>`
+         <p class="hint-text" style="margin-top:8px">Connect your Google account to auto-import debit transaction alert emails from HDFC, SBI, ICICI, Union Bank of India, Slice, and all your bank accounts.</p>`
     }
   </div>
 

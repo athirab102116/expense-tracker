@@ -12,7 +12,7 @@ A free, installable expense tracker that works fully offline. **No accounts. No 
 - **Budget tracking** with progress bars (turns red near limit)
 - **Transactions** list with search, filter, and edit
 - **Auto-categorize** by merchant keyword rules (editable + learns your corrections)
-- **Paste SMS** to auto-fill amounts from Indian bank messages
+- **Gmail Auto-Sync**: Auto-import transaction alerts from all bank accounts (HDFC, SBI, ICICI, Union Bank of India, Slice, Axis, Kotak, IDFC FIRST, OneCard, and more)
 - **URL automation** for iOS Shortcuts
 - **Export / Import** as CSV or JSON
 - **Dark mode** automatic

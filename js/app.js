@@ -62,10 +62,11 @@ function showToast(msg, type = 'success') {
   if (existing) existing.remove();
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
-  t.textContent = msg;
+  const icon = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : '✨';
+  t.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg">${msg}</span>`;
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add('show'));
-  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2500);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 350); }, 2600);
 }
 
 function openModal(id) {
@@ -1453,7 +1454,7 @@ async function renderDashboard() {
   const last5 = [...expenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 5);
 
   const diffLabel = prevTotal > 0
-    ? `<span class="diff ${diff <= 0 ? 'green' : 'red'}">${diff <= 0 ? '▼' : '▲'} ${Math.abs(diffPct)}% vs last month</span>`
+    ? `<span class="diff-badge ${diff <= 0 ? 'diff-good' : 'diff-warn'}">${diff <= 0 ? '▼' : '▲'} ${Math.abs(diffPct)}% vs prev</span>`
     : '';
   const countLabel = `<span class="expense-count">${expenses.length} expense${expenses.length !== 1 ? 's' : ''}</span>`;
 
@@ -1516,32 +1517,36 @@ async function renderDashboard() {
 <div class="view-dashboard">
   ${storageBanner}
   <div class="dash-header">
-    <button class="month-nav" id="prev-month">‹</button>
+    <button class="month-nav" id="prev-month" aria-label="Previous month">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
     <div class="month-label-wrap">
       <h2 class="month-label">${monthLabel(month)}</h2>
-      ${month !== today().slice(0,7) ? `<button class="today-btn" id="today-btn">Today</button>` : ''}
+      ${month !== today().slice(0,7) ? `<button class="today-btn" id="today-btn"><span class="today-dot"></span>Today</button>` : ''}
     </div>
-    <button class="month-nav" id="next-month">›</button>
+    <button class="month-nav" id="next-month" aria-label="Next month">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>
   </div>
 
   <div class="stats-bar">
     <div class="stat-tile">
-      <div class="stat-label">Total This Month</div>
+      <div class="stat-label"><span>💳</span> Total This Month</div>
       <div class="stat-value">${fmt(total)}</div>
       ${diffLabel ? `<div class="stat-sub">${diffLabel}</div>` : `<div class="stat-sub">${countLabel}</div>`}
     </div>
     <div class="stat-tile">
-      <div class="stat-label">Avg Daily Spend</div>
+      <div class="stat-label"><span>📅</span> Daily Average</div>
       <div class="stat-value">${fmt(Math.round(avgDaily))}</div>
       <div class="stat-sub">${daysElapsed} day${daysElapsed !== 1 ? 's' : ''} tracked</div>
     </div>
     <div class="stat-tile">
-      <div class="stat-label">Top Category</div>
+      <div class="stat-label"><span>👑</span> Top Category</div>
       <div class="stat-value">${topCat ? topCat.emoji + ' ' + topCat.name : '—'}</div>
       <div class="stat-sub">${topCatEntry ? fmt(topCatEntry[1]) : 'No expenses yet'}</div>
     </div>
     <div class="stat-tile">
-      <div class="stat-label">Budget Left</div>
+      <div class="stat-label"><span>🎯</span> Budget Left</div>
       <div class="stat-value ${budgetRemaining === null ? '' : budgetRemaining < 0 ? 'stat-over' : 'stat-ok'}">${budgetRemaining === null ? '—' : fmt(Math.abs(budgetRemaining))}</div>
       <div class="stat-sub">${budgetRemaining === null ? 'No budget set' : budgetRemaining < 0 ? 'over budget' : 'remaining'}</div>
     </div>
@@ -1575,6 +1580,14 @@ async function renderDashboard() {
     <div class="card chart-card chart-card-full">
       <div class="chart-title">Budget vs Actual</div>
       <div class="chart-wrap-bar" id="budget-chart-wrap"><canvas id="budgetChart"></canvas></div>
+    </div>
+
+    <div class="card recent-card chart-card-full">
+      <div class="recent-header">
+        <span class="chart-title">Recent Activity</span>
+        <button class="btn-link" id="dash-view-all-txns" style="font-size:12px;font-weight:700">View all →</button>
+      </div>
+      <div class="recent-list">${recentItemsHTML}</div>
     </div>
   </div>
 </div>
@@ -1668,6 +1681,7 @@ async function mountDashboard() {
 
   document.getElementById('view-all-txn')?.addEventListener('click', () => setView('transactions'));
   document.getElementById('view-all-txn-2')?.addEventListener('click', () => setView('transactions'));
+  document.getElementById('dash-view-all-txns')?.addEventListener('click', () => setView('transactions'));
 
   document.querySelectorAll('.recent-item').forEach(el => {
     el.addEventListener('click', async () => {
@@ -2165,7 +2179,7 @@ async function renderBudgetVsActualChart(month) {
 function renderAddForm(editData = null) {
   const e = editData || state.editingExpense || {};
   const isEdit = !!e.id;
-  const methods = ['UPI', 'Card', 'Cash'];
+  const methods = ['UPI', 'Card', 'Cash', 'Transfer'];
 
   const catGrid = state.categories.map(cat => `
     <div class="cat-pick ${(e.category || 'food') === cat.id ? 'selected' : ''}" data-id="${cat.id}">
@@ -2190,6 +2204,14 @@ function renderAddForm(editData = null) {
     <div class="amount-input-wrap">
       <span class="currency-sym">₹</span>
       <input type="number" id="f-amount" inputmode="decimal" placeholder="0" value="${e.amount || ''}" required step="0.01" min="0.01" class="amount-input">
+    </div>
+
+    <div class="quick-amounts">
+      <button type="button" class="quick-amt-chip" data-val="50">+₹50</button>
+      <button type="button" class="quick-amt-chip" data-val="100">+₹100</button>
+      <button type="button" class="quick-amt-chip" data-val="200">+₹200</button>
+      <button type="button" class="quick-amt-chip" data-val="500">+₹500</button>
+      <button type="button" class="quick-amt-chip" data-val="1000">+₹1000</button>
     </div>
 
     <label class="field-label">Category</label>
@@ -2222,6 +2244,18 @@ function renderAddForm(editData = null) {
 function mountAddForm(modalMode = false) {
   let selectedCat = state.editingExpense?.category || 'food';
   let selectedMethod = state.editingExpense?.method || 'UPI';
+
+  // Quick amount preset chips
+  document.querySelectorAll('.quick-amt-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const amtInput = document.getElementById('f-amount');
+      if (!amtInput) return;
+      const addVal = parseFloat(chip.dataset.val) || 0;
+      const curVal = parseFloat(amtInput.value) || 0;
+      amtInput.value = (curVal + addVal).toFixed(curVal % 1 !== 0 ? 2 : 0);
+      amtInput.dispatchEvent(new Event('input'));
+    });
+  });
 
   // Category picker
   document.querySelectorAll('.cat-pick').forEach(el => {
@@ -2426,7 +2460,11 @@ async function renderTransactions() {
     </div>
   </div>
   <div class="filter-bar">
-    <input type="search" id="search-input" placeholder="🔍 Search..." value="${state.searchQuery}" class="search-input">
+    <div class="search-wrapper">
+      <svg class="search-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="search" id="search-input" placeholder="Search merchant, note, amount..." value="${state.searchQuery}" class="search-input">
+      <button type="button" class="search-clear-btn" id="search-clear" style="display:${state.searchQuery ? 'flex' : 'none'}" aria-label="Clear search">✕</button>
+    </div>
     <select id="cat-filter" class="cat-filter-select">
       <option value="">All categories</option>
       ${catOptions}
@@ -2562,14 +2600,31 @@ async function exportPDF() {
 }
 
 function mountTransactions() {
-  document.getElementById('search-input')?.addEventListener('input', e => {
+  const searchInput = document.getElementById('search-input');
+  const searchClear = document.getElementById('search-clear');
+
+  let debounceTimer = null;
+  searchInput?.addEventListener('input', e => {
     state.searchQuery = e.target.value;
-    renderTransactions().then(html => {
-      document.getElementById('exp-list').innerHTML =
-        html.match(/<div id="exp-list">([\s\S]*?)<\/div>\s*$/)?.[1] || '';
-    });
-    // Re-render just the list part
+    if (searchClear) searchClear.style.display = e.target.value ? 'flex' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      renderView();
+      // Restore focus to search input after render
+      const newInput = document.getElementById('search-input');
+      if (newInput) {
+        newInput.focus();
+        const len = newInput.value.length;
+        newInput.setSelectionRange(len, len);
+      }
+    }, 220);
+  });
+
+  searchClear?.addEventListener('click', () => {
+    state.searchQuery = '';
     renderView();
+    const newInput = document.getElementById('search-input');
+    if (newInput) newInput.focus();
   });
 
   document.getElementById('cat-filter')?.addEventListener('change', e => {

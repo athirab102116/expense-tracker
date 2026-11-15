@@ -1,12 +1,12 @@
-const CACHE = 'expense-tracker-v58';
+const CACHE = 'expense-tracker-v59';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './css/app.css',
-  './css/app.css?v=58',
+  './css/app.css?v=59',
   './js/app.js',
-  './js/app.js?v=58',
+  './js/app.js?v=59',
   './js/db.js',
   './js/categories.js',
   './js/audio.js',

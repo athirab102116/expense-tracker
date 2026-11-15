@@ -1,46 +1,52 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#1a73e8" flood-opacity="0.18"/>
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.08"/>
+    <radialGradient id="espressoGrad" cx="50%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#241E20"/>
+      <stop offset="100%" stop-color="#141112"/>
+    </radialGradient>
+    <linearGradient id="champagneGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F2DEC0"/>
+      <stop offset="50%" stop-color="#DFC498"/>
+      <stop offset="100%" stop-color="#B89764"/>
+    </linearGradient>
+    <linearGradient id="roseAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E5B09C"/>
+      <stop offset="100%" stop-color="#D99B84"/>
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
-    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4285F4"/>
-      <stop offset="100%" stop-color="#1A73E8"/>
-    </linearGradient>
-    <linearGradient id="redGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#EA4335"/>
-      <stop offset="100%" stop-color="#D93025"/>
-    </linearGradient>
-    <linearGradient id="yellowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FBBC04"/>
-      <stop offset="100%" stop-color="#F29900"/>
-    </linearGradient>
-    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#34A853"/>
-      <stop offset="100%" stop-color="#188038"/>
-    </linearGradient>
   </defs>
 
-  <!-- Squircle Base with Material Elevation -->
-  <rect x="24" y="24" width="464" height="464" rx="112" fill="#FFFFFF" filter="url(#shadow)"/>
-  <rect x="24" y="24" width="464" height="464" rx="112" fill="none" stroke="#E8EAED" stroke-width="4"/>
+  <!-- Deep Warm Espresso Squircle Base -->
+  <rect x="16" y="16" width="480" height="480" rx="128" fill="url(#espressoGrad)"/>
+  <rect x="16" y="16" width="480" height="480" rx="128" fill="none" stroke="rgba(223, 196, 152, 0.22)" stroke-width="3"/>
 
-  <!-- Google 4-Color Geometric Flowing Card / Wallet Emblem -->
-  <!-- Top Arc: Blue -->
-  <path d="M 176 160 C 220 120, 292 120, 336 160 C 360 182, 368 214, 356 244 L 320 226 C 326 206, 320 186, 306 174 C 278 146, 234 146, 206 174 L 176 160 Z" fill="url(#blueGrad)"/>
+  <!-- Subtle Inner Hairline Frame -->
+  <rect x="40" y="40" width="432" height="432" rx="104" fill="none" stroke="rgba(223, 196, 152, 0.08)" stroke-width="1.5"/>
 
-  <!-- Right Arc: Red -->
-  <path d="M 336 160 C 376 204, 376 276, 336 320 C 314 344, 282 352, 252 340 L 270 304 C 290 310, 310 304, 322 290 C 350 262, 350 218, 322 190 L 336 160 Z" fill="url(#redGrad)"/>
+  <!-- Architectural Arch & Intertwined Crest Emblem in Champagne Gold -->
+  <path d="M 160 360 V 220 C 160 166.975 202.975 124 256 124 C 309.025 124 352 166.975 352 220 V 360"
+        fill="none" stroke="url(#champagneGold)" stroke-width="12" stroke-linecap="round"/>
 
-  <!-- Bottom Arc: Yellow -->
-  <path d="M 336 320 C 292 360, 220 360, 176 320 C 152 298, 144 266, 156 236 L 192 254 C 186 274, 192 294, 206 306 C 234 334, 278 334, 306 306 L 336 320 Z" fill="url(#yellowGrad)"/>
+  <!-- Horizontal Plinth Bar -->
+  <line x1="136" y1="360" x2="376" y2="360" stroke="url(#champagneGold)" stroke-width="12" stroke-linecap="round"/>
 
-  <!-- Left Arc: Green -->
-  <path d="M 176 320 C 136 276, 136 204, 176 160 C 198 136, 230 128, 260 140 L 242 176 C 222 170, 202 176, 190 190 C 162 218, 162 262, 190 290 L 176 320 Z" fill="url(#greenGrad)"/>
+  <!-- Inner Soft Terracotta Rose Orbit Ring -->
+  <circle cx="256" cy="244" r="54" fill="none" stroke="url(#roseAccent)" stroke-width="8" opacity="0.95"/>
 
-  <!-- Center Card Emblem with Rupee Symbol -->
-  <rect x="200" y="200" width="112" height="112" rx="28" fill="#1A73E8"/>
-  <text x="256" y="278" font-family="-apple-system, BlinkMacSystemFont, 'Google Sans', 'Roboto', sans-serif"
-        font-size="64" font-weight="700" fill="#FFFFFF" text-anchor="middle">₹</text>
+  <!-- Center Editorial Serif Rupee Monogram -->
+  <text x="256" y="264"
+        font-family="'Cormorant Garamond', 'Playfair Display', Georgia, serif"
+        font-size="62" font-weight="600"
+        fill="url(#champagneGold)"
+        text-anchor="middle"
+        letter-spacing="-1">₹</text>
+
+  <!-- Subtle Corner Accents (Quiet Luxury Details) -->
+  <circle cx="84" cy="84" r="3.5" fill="rgba(223, 196, 152, 0.4)"/>
+  <circle cx="428" cy="84" r="3.5" fill="rgba(223, 196, 152, 0.4)"/>
+  <circle cx="84" cy="428" r="3.5" fill="rgba(223, 196, 152, 0.4)"/>
+  <circle cx="428" cy="428" r="3.5" fill="rgba(223, 196, 152, 0.4)"/>
 </svg>

@@ -1,15 +1,17 @@
 export const DEFAULT_CATEGORIES = [
-  { id: 'food',          name: 'Food',          emoji: '🍓', color: '#A3E635' },
-  { id: 'groceries',     name: 'Groceries',     emoji: '🌿', color: '#FFE14D' },
-  { id: 'transport',     name: 'Transport',     emoji: '🦋', color: '#4D9DFF' },
-  { id: 'shopping',      name: 'Shopping',      emoji: '🌸', color: '#FF9F1C' },
-  { id: 'bills',         name: 'Bills',         emoji: '⭐', color: '#2DD4BF' },
-  { id: 'rent',          name: 'Rent',          emoji: '🏡', color: '#4ADE80' },
-  { id: 'entertainment', name: 'Entertainment', emoji: '🎠', color: '#A855F7' },
-  { id: 'health',        name: 'Health',        emoji: '🌺', color: '#FF4D4D' },
-  { id: 'education',     name: 'Education',     emoji: '🔮', color: '#818CF8' },
-  { id: 'travel',        name: 'Travel',        emoji: '🌙', color: '#F472B6' },
-  { id: 'other',         name: 'Other',         emoji: '✨', color: '#94A3B8' },
+  { id: 'food',          name: 'Food',          emoji: '🍽️', color: '#D99B84' },
+  { id: 'groceries',     name: 'Groceries',     emoji: '🛒', color: '#DFC498' },
+  { id: 'transport',     name: 'Transport',     emoji: '🧭', color: '#8FA998' },
+  { id: 'shopping',      name: 'Shopping',      emoji: '🛍️', color: '#B6899A' },
+  { id: 'bills',         name: 'Bills',         emoji: '📄', color: '#C9B7A6' },
+  { id: 'rent',          name: 'Rent',          emoji: '🏛️', color: '#B39D82' },
+  { id: 'entertainment', name: 'Entertainment', emoji: '✨', color: '#D4A373' },
+  { id: 'health',        name: 'Health',        emoji: '🌿', color: '#7FB093' },
+  { id: 'education',     name: 'Education',     emoji: '📖', color: '#A0849D' },
+  { id: 'travel',        name: 'Travel',        emoji: '✈️', color: '#C2847A' },
+  { id: 'savings',       name: 'Savings',       emoji: '💎', color: '#DFC498' },
+  { id: 'debt',          name: 'Debt repayment',emoji: '💳', color: '#B87D74' },
+  { id: 'other',         name: 'Other',         emoji: '💫', color: '#A89B95' },
 ];
 
 export const DEFAULT_MERCHANT_RULES = [

@@ -64,12 +64,12 @@ function getMerchantInitial(name) {
 }
 
 function getMerchantColor(name) {
-  if (!name) return '#6366f1';
+  if (!name) return '#D99B84';
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   const colors = [
-    '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#06b6d4',
-    '#8b5cf6', '#3b82f6', '#14b8a6', '#f97316', '#84cc16'
+    '#D99B84', '#DFC498', '#8FA998', '#B6899A', '#C9B7A6',
+    '#B39D82', '#D4A373', '#7FB093', '#A0849D', '#C2847A'
   ];
   return colors[Math.abs(hash) % colors.length];
 }
@@ -79,7 +79,50 @@ function parseAmount(str) {
 }
 
 function getCat(id) {
-  return state.categories.find(c => c.id === id) || { id: 'other', name: 'Other', emoji: '📦', color: '#B2BEC3' };
+  return state.categories.find(c => c.id === id) || { id: 'other', name: 'Other', emoji: '💫', color: '#A89B95' };
+}
+
+function getCatBadge(cat, size = 14) {
+  if (!cat) return '';
+  const id = (cat.id || '').toLowerCase();
+  const strokeColor = cat.color || '#DFC498';
+
+  const icons = {
+    bills: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg>`,
+    food: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>`,
+    groceries: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
+    shopping: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 11V7a4 4 0 0 0-8 0v4"/><path d="M5 9h14l1 12H4L5 9z"/></svg>`,
+    transport: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>`,
+    savings: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20"/></svg>`,
+    debt: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`,
+    'debt repayment': `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`,
+    entertainment: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    health: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>`,
+    education: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>`,
+    travel: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+    rent: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+    other: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`,
+  };
+
+  let matchedIcon = icons[id];
+  if (!matchedIcon) {
+    if (id.includes('bill') || id.includes('utility')) matchedIcon = icons.bills;
+    else if (id.includes('food') || id.includes('dine') || id.includes('restaurant')) matchedIcon = icons.food;
+    else if (id.includes('grocer') || id.includes('supermarket')) matchedIcon = icons.groceries;
+    else if (id.includes('shop') || id.includes('cloth') || id.includes('gift')) matchedIcon = icons.shopping;
+    else if (id.includes('transport') || id.includes('travel') || id.includes('fuel') || id.includes('cab') || id.includes('auto')) matchedIcon = icons.transport;
+    else if (id.includes('saving') || id.includes('invest') || id.includes('allowance')) matchedIcon = icons.savings;
+    else if (id.includes('debt') || id.includes('loan') || id.includes('emi') || id.includes('card')) matchedIcon = icons.debt;
+    else if (id.includes('entertain') || id.includes('movie') || id.includes('fun')) matchedIcon = icons.entertainment;
+    else if (id.includes('health') || id.includes('medic') || id.includes('doctor')) matchedIcon = icons.health;
+    else if (id.includes('educat') || id.includes('course') || id.includes('book')) matchedIcon = icons.education;
+    else if (id.includes('rent') || id.includes('house') || id.includes('home')) matchedIcon = icons.rent;
+  }
+
+  if (matchedIcon) {
+    return `<span class="cat-line-icon-badge" style="background:${cat.color}18;border:1px solid ${cat.color}35">${matchedIcon}</span>`;
+  }
+  return `<span class="cat-line-icon-badge cat-custom-icon" style="background:${cat.color}18;border:1px solid ${cat.color}35">${cat.emoji || '✨'}</span>`;
 }
 
 function dateToMonth(dateStr) {
@@ -1488,7 +1531,7 @@ async function renderDashboard() {
       return `
         <div class="cat-breakdown-row" data-cat="${id}" title="Click to view ${cat.name} transactions">
           <span class="cat-dot" style="background:${cat.color}"></span>
-          <span class="cat-name-text">${cat.emoji} ${cat.name}</span>
+          <span class="cat-name-text" style="display:inline-flex;align-items:center;gap:6px">${getCatBadge(cat, 13)} <span>${cat.name}</span></span>
           <span class="cat-pct-pill">${pct}%</span>
           <span class="cat-amt-text">${fmtCurrency(amt, false)}</span>
         </div>
@@ -1551,7 +1594,7 @@ async function renderDashboard() {
               <div class="merchant-meta">
                 <span class="merchant-title">${e.merchant || cat.name}</span>
                 <span class="merchant-note">
-                  <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:1px 6px">${cat.emoji} ${cat.name}</span>
+                  <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:2px 8px">${getCatBadge(cat, 12)} <span>${cat.name}</span></span>
                   <span class="method-tag" style="font-size:10px;padding:1px 5px">${e.method || 'UPI'}</span>
                   ${e.note ? `<span>· ${e.note}</span>` : ''}
                 </span>
@@ -1592,7 +1635,13 @@ async function renderDashboard() {
     <div class="kpi-card kpi-net">
       <div class="kpi-card-header">
         <span class="kpi-title">Net Balance</span>
-        <div class="kpi-icon-wrap">💼</div>
+        <div class="kpi-icon-wrap" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/>
+            <path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/>
+            <path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>
+          </svg>
+        </div>
       </div>
       <div class="kpi-val" style="color:${netBalance >= 0 ? 'var(--income)' : 'var(--expense)'}">
         ${fmtCurrency(netBalance, true)}
@@ -1607,7 +1656,12 @@ async function renderDashboard() {
     <div class="kpi-card kpi-income">
       <div class="kpi-card-header">
         <span class="kpi-title">Total Income</span>
-        <div class="kpi-icon-wrap">📈</div>
+        <div class="kpi-icon-wrap" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7"/>
+            <polyline points="7 7 17 7 17 17"/>
+          </svg>
+        </div>
       </div>
       <div class="kpi-val">${fmtCurrency(incomeTotal, true)}</div>
       <div class="kpi-footer">
@@ -1620,7 +1674,12 @@ async function renderDashboard() {
     <div class="kpi-card kpi-expense">
       <div class="kpi-card-header">
         <span class="kpi-title">Total Expenses</span>
-        <div class="kpi-icon-wrap">📉</div>
+        <div class="kpi-icon-wrap" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="7" y1="7" x2="17" y2="17"/>
+            <polyline points="17 7 17 17 7 17"/>
+          </svg>
+        </div>
       </div>
       <div class="kpi-val">${fmtCurrency(expenseTotal, true)}</div>
       <div class="kpi-footer">
@@ -1633,7 +1692,12 @@ async function renderDashboard() {
     <div class="kpi-card kpi-savings">
       <div class="kpi-card-header">
         <span class="kpi-title">Savings Rate</span>
-        <div class="kpi-icon-wrap">🎯</div>
+        <div class="kpi-icon-wrap" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3h12l4 6-10 12L2 9z"/>
+            <path d="M2 9h20"/>
+          </svg>
+        </div>
       </div>
       <div class="kpi-val">${savingsRate}%</div>
       <div class="kpi-footer">
@@ -1763,7 +1827,7 @@ async function mountDashboard() {
       const catExps = expenses.filter(e => e.category === catId).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
       const total = catExps.reduce((s, e) => s + e.amount, 0);
       document.getElementById('cat-modal-content').innerHTML = `
-        <div class="modal-title">${cat.emoji} ${cat.name} — ${fmtCurrency(total)}</div>
+        <div class="modal-title" style="display:flex;align-items:center;gap:8px">${getCatBadge(cat, 18)} <span>${cat.name}</span> — <span>${fmtCurrency(total)}</span></div>
         <div class="exp-list" style="margin-top:14px">
           ${catExps.length === 0 ? '<div class="empty-state">No expenses</div>' :
             catExps.map(e => `
@@ -1824,7 +1888,7 @@ function renderDonutChart(expenses) {
           data: entries.map(([, v]) => v),
           backgroundColor: entries.map(([id]) => getCat(id).color),
           borderWidth: 2,
-          borderColor: isDark ? '#141419' : '#ffffff',
+          borderColor: isDark ? '#1E191B' : '#ffffff',
           hoverOffset: 4,
         }]
       },
@@ -1835,12 +1899,12 @@ function renderDonutChart(expenses) {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: isDark ? 'rgba(20, 20, 26, 0.96)' : 'rgba(15, 23, 42, 0.95)',
-            titleColor: '#fff',
-            bodyColor: '#cbd5e1',
+            backgroundColor: isDark ? 'rgba(30, 25, 27, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+            titleColor: isDark ? '#F5EFEA' : '#141112',
+            bodyColor: isDark ? '#D8CECA' : '#4A4042',
             padding: 10,
             cornerRadius: 8,
-            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+            borderColor: isDark ? 'rgba(223, 196, 152, 0.25)' : 'rgba(217, 155, 132, 0.25)',
             borderWidth: 1,
             callbacks: {
               label: ctx => {
@@ -1882,8 +1946,8 @@ function renderCashFlowChart(expenses, month) {
   }
 
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-  const textColor = isDark ? '#64748b' : '#94a3b8';
+  const gridColor = isDark ? 'rgba(232, 207, 193, 0.06)' : 'rgba(0,0,0,0.05)';
+  const textColor = isDark ? '#A89B95' : '#7D7073';
 
   try {
     state.barChart = new Chart(canvas, {
@@ -1894,7 +1958,9 @@ function renderCashFlowChart(expenses, month) {
           {
             label: 'Income',
             data: incomeByDay,
-            backgroundColor: 'rgba(16, 185, 129, 0.85)',
+            backgroundColor: 'rgba(127, 176, 147, 0.85)',
+            borderColor: '#7FB093',
+            borderWidth: 1,
             borderRadius: 3,
             barPercentage: 0.8,
             categoryPercentage: 0.85,
@@ -1902,7 +1968,9 @@ function renderCashFlowChart(expenses, month) {
           {
             label: 'Expenses',
             data: expenseByDay,
-            backgroundColor: 'rgba(99, 102, 241, 0.85)',
+            backgroundColor: 'rgba(217, 155, 132, 0.85)',
+            borderColor: '#D99B84',
+            borderWidth: 1,
             borderRadius: 3,
             barPercentage: 0.8,
             categoryPercentage: 0.85,
@@ -1915,7 +1983,11 @@ function renderCashFlowChart(expenses, month) {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: isDark ? 'rgba(20, 20, 26, 0.96)' : 'rgba(15, 23, 42, 0.95)',
+            backgroundColor: isDark ? 'rgba(30, 25, 27, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+            titleColor: isDark ? '#F5EFEA' : '#141112',
+            bodyColor: isDark ? '#D8CECA' : '#4A4042',
+            borderColor: isDark ? 'rgba(223, 196, 152, 0.25)' : 'rgba(217, 155, 132, 0.25)',
+            borderWidth: 1,
             padding: 10,
             cornerRadius: 8,
             callbacks: {
@@ -2275,7 +2347,7 @@ async function renderTransactions() {
             </td>
             <td class="txn-td">
               <span class="cat-pill" style="background:${cat.color}20;color:${cat.color}">
-                ${cat.emoji} ${cat.name}
+                ${getCatBadge(cat, 12)} <span>${cat.name}</span>
               </span>
             </td>
             <td class="txn-td">
@@ -2290,8 +2362,19 @@ async function renderTransactions() {
               ${isCredit ? '+' : '-'}${fmtCurrency(e.amount, true)}
             </td>
             <td class="txn-td actions-cell">
-              <button class="row-action-btn edit-txn-btn" data-id="${e.id}" title="Edit Transaction">✏️</button>
-              <button class="row-action-btn delete-btn txn-delete-btn" data-id="${e.id}" title="Delete Transaction">🗑</button>
+              <button class="row-action-btn edit-txn-btn" data-id="${e.id}" title="Edit Transaction" aria-label="Edit">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                  <path d="m15 5 4 4"/>
+                </svg>
+              </button>
+              <button class="row-action-btn delete-btn txn-delete-btn" data-id="${e.id}" title="Delete Transaction" aria-label="Delete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+              </button>
             </td>
           </tr>
         `;
@@ -2554,42 +2637,39 @@ function renderBudgetComparisonChart(monthBudgets, spentByCat) {
   });
 
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-  const textColor = isDark ? '#94a3b8' : '#64748b';
-  const labelColor = isDark ? '#f1f5f9' : '#0f172a';
+  const gridColor = isDark ? 'rgba(232, 207, 193, 0.06)' : 'rgba(0,0,0,0.05)';
+  const textColor = isDark ? '#A89B95' : '#7D7073';
+  const labelColor = isDark ? '#F5EFEA' : '#262021';
 
-  const labels = allCatIds.map(id => {
-    const c = getCat(id);
-    return `${c.emoji} ${c.name}`;
-  });
+  const labels = allCatIds.map(id => getCat(id).name);
 
   const budgetedData = allCatIds.map(id => budgetMap[id] || 0);
   const spentData = allCatIds.map(id => spentByCat[id] || 0);
 
   // Background and border colors for Spent bars:
-  // Over budget: red/rose (#f43f5e)
-  // At exact limit or near (>=80%): amber (#f59e0b)
-  // Under budget (<80%): green/emerald (#10b981)
+  // Over budget: muted terracotta crimson (#D97272)
+  // At exact limit or near (>=80%): warm amber (#E0A96D)
+  // Under budget (<80%): sage emerald (#7FB093)
   const spentBgColors = allCatIds.map(id => {
     const budget = budgetMap[id] || 0;
     const spent = spentByCat[id] || 0;
     if (budget > 0) {
-      if (spent > budget) return 'rgba(244, 63, 94, 0.85)';
-      if (spent === budget || spent >= budget * 0.8) return 'rgba(245, 158, 11, 0.85)';
-      return 'rgba(16, 185, 129, 0.85)';
+      if (spent > budget) return 'rgba(217, 114, 114, 0.88)';
+      if (spent === budget || spent >= budget * 0.8) return 'rgba(224, 169, 109, 0.88)';
+      return 'rgba(127, 176, 147, 0.88)';
     }
-    return isDark ? 'rgba(148, 163, 184, 0.6)' : 'rgba(100, 116, 139, 0.6)';
+    return isDark ? 'rgba(168, 155, 149, 0.6)' : 'rgba(125, 112, 115, 0.6)';
   });
 
   const spentBorderColors = allCatIds.map(id => {
     const budget = budgetMap[id] || 0;
     const spent = spentByCat[id] || 0;
     if (budget > 0) {
-      if (spent > budget) return '#f43f5e';
-      if (spent === budget || spent >= budget * 0.8) return '#f59e0b';
-      return '#10b981';
+      if (spent > budget) return '#D97272';
+      if (spent === budget || spent >= budget * 0.8) return '#E0A96D';
+      return '#7FB093';
     }
-    return '#94a3b8';
+    return '#A89B95';
   });
 
   try {
@@ -2601,8 +2681,8 @@ function renderBudgetComparisonChart(monthBudgets, spentByCat) {
           {
             label: 'Budgeted',
             data: budgetedData,
-            backgroundColor: isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.20)',
-            borderColor: 'rgba(99, 102, 241, 0.95)',
+            backgroundColor: isDark ? 'rgba(223, 196, 152, 0.30)' : 'rgba(223, 196, 152, 0.38)',
+            borderColor: '#DFC498',
             borderWidth: 1.5,
             borderRadius: 4,
             barPercentage: 0.75,
@@ -2627,10 +2707,10 @@ function renderBudgetComparisonChart(monthBudgets, spentByCat) {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: isDark ? 'rgba(20, 21, 23, 0.96)' : 'rgba(15, 23, 42, 0.95)',
-            titleColor: '#ffffff',
-            bodyColor: '#cbd5e1',
-            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+            backgroundColor: isDark ? 'rgba(30, 25, 27, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+            titleColor: isDark ? '#F5EFEA' : '#141112',
+            bodyColor: isDark ? '#D8CECA' : '#4A4042',
+            borderColor: isDark ? 'rgba(223, 196, 152, 0.25)' : 'rgba(217, 155, 132, 0.25)',
             borderWidth: 1,
             padding: 12,
             cornerRadius: 8,
@@ -2824,7 +2904,7 @@ async function renderBudgets() {
         return `
           <div class="budget-item card" data-id="${b.id}" style="border-left:4px solid ${cat.color || 'var(--brand)'}">
             <div class="budget-top">
-              <span class="budget-cat">${cat.emoji} ${cat.name}</span>
+              <span class="budget-cat" style="display:inline-flex;align-items:center;gap:6px">${getCatBadge(cat, 14)} <span>${cat.name}</span></span>
               <span class="budget-amounts ${status}">${fmt(spent)} / ${fmt(b.amount)}</span>
             </div>
             <div class="progress-bar-wrap">
@@ -2973,7 +3053,12 @@ async function mountBudgets() {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 const CAT_EMOJI_PRESETS = ['🍽️','🛒','🚌','🏪','💡','🏠','🎬','💊','📚','✈️','☕','🎁','💅','🐾','🏋️','🎵','🍕','🥗','🎮','💻','🧴','🌿','🎨','🏦','💰','🧾','🤝','🛠️','📱','🎯'];
-const CAT_COLOR_PRESETS = ['#FF6B6B','#FF8E53','#FFC312','#A3CB38','#1289A7','#4ECDC4','#45B7D1','#A29BFE','#FD79A8','#E056FD','#6C5CE7','#00B894','#FDCB6E','#E17055','#74B9FF','#55EFC4','#636E72','#DDA0DD','#98D8C8','#F8C291'];
+const CAT_COLOR_PRESETS = [
+  '#D99B84', '#DFC498', '#8FA998', '#B6899A', '#C9B7A6',
+  '#B39D82', '#D4A373', '#7FB093', '#A0849D', '#C2847A',
+  '#B87D74', '#A89B95', '#E5B09C', '#E0A96D', '#92C2A6',
+  '#D97272', '#C47F68', '#9B8281', '#7D8C84', '#B38B7D'
+];
 
 async function renderSettings() {
   const gmailToken = await db.getSetting('gmail_token', null);
@@ -3060,13 +3145,19 @@ async function renderSettings() {
 
   <!-- Categories -->
   <div class="settings-section card">
-    <div class="settings-section-title">🏷️ Categories</div>
+    <div class="settings-section-title">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px">
+        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+        <line x1="7" y1="7" x2="7.01" y2="7"/>
+      </svg>
+      Categories
+    </div>
     <p class="hint-text" style="margin-bottom:12px">Manage your categories. Each category appears as a compact tag below.</p>
     
     <div id="cat-settings-list">
       ${state.categories.map(cat => `
         <div class="cat-setting-row" data-cat-id="${cat.id}">
-          <span class="cat-setting-icon">${cat.emoji}</span>
+          <span class="cat-setting-icon">${getCatBadge(cat, 14)}</span>
           <span class="cat-setting-name">${cat.name}</span>
           ${cat.id !== 'other' ? `<button type="button" class="cat-setting-del" data-cat-id="${cat.id}" title="Delete ${cat.name}">✕</button>` : ''}
         </div>
@@ -3081,8 +3172,8 @@ async function renderSettings() {
         </button>
         <input type="text" id="inline-cat-name-input" class="inline-cat-name-input" placeholder="Add new category…" maxlength="28" required autocomplete="off">
         <label class="inline-cat-color-label" title="Pick color">
-          <input type="color" id="inline-cat-color-input" value="#6366f1" class="inline-cat-color-input">
-          <span id="inline-cat-color-swatch" class="inline-cat-color-swatch" style="background:#6366f1"></span>
+          <input type="color" id="inline-cat-color-input" value="#D99B84" class="inline-cat-color-input">
+          <span id="inline-cat-color-swatch" class="inline-cat-color-swatch" style="background:#D99B84"></span>
         </label>
       </div>
       <button type="submit" class="btn-primary-sm inline-cat-submit-btn">＋ Add</button>

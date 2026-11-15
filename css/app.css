@@ -3,59 +3,67 @@
    ══════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Brand Accents */
-  --brand: #4f46e5;
-  --brand-hover: #4338ca;
-  --brand-light: rgba(79, 70, 229, 0.10);
-  --brand-border: rgba(79, 70, 229, 0.25);
+  /* Brand Accents - Muted Champagne Rose / Warm Terracotta Blush */
+  --brand: #C47F68;
+  --brand-hover: #B56F58;
+  --brand-light: rgba(196, 127, 104, 0.12);
+  --brand-border: rgba(196, 127, 104, 0.28);
+  --brand-text-contrast: #FFFFFF;
 
-  /* Semantic Financial Colors */
-  --income: #10b981;
-  --income-hover: #059669;
-  --income-light: rgba(16, 185, 129, 0.10);
-  --income-border: rgba(16, 185, 129, 0.25);
+  /* Quiet Luxury Palette Tokens */
+  --gold: #DFC498;
+  --gold-light: rgba(223, 196, 152, 0.16);
+  --mauve: #B6899A;
+  --sage: #8FA998;
+  --sand: #C9B7A6;
 
-  --expense: #f43f5e;
-  --expense-hover: #e11d48;
-  --expense-light: rgba(244, 63, 94, 0.10);
-  --expense-border: rgba(244, 63, 94, 0.25);
+  /* Semantic Financial Colors (Muted & Editorial) */
+  --income: #4F8E68;
+  --income-hover: #417556;
+  --income-light: rgba(79, 142, 104, 0.12);
+  --income-border: rgba(79, 142, 104, 0.28);
 
-  --warning: #f59e0b;
-  --warning-light: rgba(245, 158, 11, 0.10);
-  --warning-border: rgba(245, 158, 11, 0.25);
+  --expense: #C65656;
+  --expense-hover: #B24646;
+  --expense-light: rgba(198, 86, 86, 0.12);
+  --expense-border: rgba(198, 86, 86, 0.28);
 
-  --info: #0284c7;
-  --info-light: rgba(2, 132, 199, 0.10);
+  --warning: #C78338;
+  --warning-light: rgba(199, 131, 56, 0.12);
+  --warning-border: rgba(199, 131, 56, 0.28);
 
-  /* Light Theme Surfaces */
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --surface-elevated: #ffffff;
-  --surface2: #f1f5f9;
-  --surface3: #e2e8f0;
-  --surface4: #cbd5e1;
+  --info: #8FA998;
+  --info-light: rgba(143, 169, 152, 0.14);
+
+  /* Light Theme Surfaces (Warm Cream & Truffle) */
+  --bg: #FAF7F5;
+  --surface: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface2: #F5EFEA;
+  --surface3: #EFE7E1;
+  --surface4: #E5DBD3;
 
   /* Typography */
-  --text: #0f172a;
-  --text2: #334155;
-  --text3: #64748b;
-  --text4: #94a3b8;
-  --text-inverse: #ffffff;
+  --text: #262021;
+  --text2: #4A4042;
+  --text3: #7D7073;
+  --text4: #A89B9E;
+  --text-inverse: #FAF7F5;
 
   /* Borders & Shadows */
-  --border: #e2e8f0;
-  --border-subtle: #edf2f7;
-  --border-focus: #6366f1;
+  --border: rgba(180, 150, 138, 0.18);
+  --border-subtle: rgba(180, 150, 138, 0.10);
+  --border-focus: #C47F68;
 
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-xs: 0 1px 2px 0 rgba(40, 30, 26, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(40, 30, 26, 0.06), 0 1px 2px 0 rgba(40, 30, 26, 0.04);
+  --shadow: 0 4px 8px -1px rgba(40, 30, 26, 0.07), 0 2px 4px -1px rgba(40, 30, 26, 0.04);
+  --shadow-lg: 0 12px 20px -3px rgba(40, 30, 26, 0.09), 0 4px 6px -2px rgba(40, 30, 26, 0.04);
+  --shadow-xl: 0 20px 28px -5px rgba(40, 30, 26, 0.11), 0 10px 10px -5px rgba(40, 30, 26, 0.04);
 
   /* Geometry & Metrics */
-  --radius: 14px;
-  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-sm: 10px;
   --radius-xs: 6px;
   --radius-pill: 9999px;
 
@@ -64,8 +72,9 @@
   --header-h: 56px;
   --tab-height: 64px;
 
-  --font: 'Google Sans', 'Google Sans Text', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
+  --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
 
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
@@ -78,58 +87,61 @@
   --danger-light: var(--expense-light);
   --success: var(--income);
   --success-light: var(--income-light);
-  --google-gradient: linear-gradient(90deg, #4285f4 0%, #ea4335 33%, #fbbc04 66%, #34a853 100%);
+  --google-gradient: linear-gradient(90deg, #D99B84 0%, #DFC498 33%, #8FA998 66%, #B6899A 100%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --brand: #6366f1;
-    --brand-hover: #818cf8;
-    --brand-light: rgba(99, 102, 241, 0.16);
-    --brand-border: rgba(99, 102, 241, 0.35);
+    /* Brand Accents - Champagne Rose / Terracotta Blush */
+    --brand: #D99B84;
+    --brand-hover: #E5B09C;
+    --brand-light: rgba(217, 155, 132, 0.14);
+    --brand-border: rgba(217, 155, 132, 0.32);
+    --brand-text-contrast: #141112;
 
-    --income: #34d399;
-    --income-hover: #10b981;
-    --income-light: rgba(52, 211, 153, 0.14);
-    --income-border: rgba(52, 211, 153, 0.30);
+    /* Semantic Financial Colors (Muted & Editorial) */
+    --income: #7FB093;
+    --income-hover: #92C2A6;
+    --income-light: rgba(127, 176, 147, 0.14);
+    --income-border: rgba(127, 176, 147, 0.30);
 
-    --expense: #fb7185;
-    --expense-hover: #f43f5e;
-    --expense-light: rgba(251, 113, 133, 0.14);
-    --expense-border: rgba(251, 113, 133, 0.30);
+    --expense: #D97272;
+    --expense-hover: #E88585;
+    --expense-light: rgba(217, 114, 114, 0.14);
+    --expense-border: rgba(217, 114, 114, 0.30);
 
-    --warning: #fbbf24;
-    --warning-light: rgba(251, 191, 36, 0.14);
-    --warning-border: rgba(251, 191, 36, 0.30);
+    --warning: #E0A96D;
+    --warning-light: rgba(224, 169, 109, 0.14);
+    --warning-border: rgba(224, 169, 109, 0.30);
 
-    --info: #38bdf8;
-    --info-light: rgba(56, 189, 248, 0.14);
+    --info: #8FA998;
+    --info-light: rgba(143, 169, 152, 0.14);
 
-    /* Dark Theme Surfaces */
-    --bg: #0c0d0e;
-    --surface: #141517;
-    --surface-elevated: #1a1c1e;
-    --surface2: #1e2023;
-    --surface3: #272a2e;
-    --surface4: #34383e;
+    /* Dark Theme Surfaces (Warm Espresso & Truffle Velvet) */
+    --bg: #141112;
+    --surface: #1E191B;
+    --surface-elevated: #241E21;
+    --surface2: #272124;
+    --surface3: #322A2E;
+    --surface4: #43393E;
 
     /* Typography */
-    --text: #f8fafc;
-    --text2: #cbd5e1;
-    --text3: #8e9cae;
-    --text4: #64748b;
-    --text-inverse: #0f172a;
+    --text: #F5EFEA;
+    --text2: #D8CECA;
+    --text3: #A89B95;
+    --text4: #7A6E69;
+    --text-inverse: #141112;
 
     /* Borders & Shadows */
-    --border: #24272c;
-    --border-subtle: #1c1e22;
-    --border-focus: #818cf8;
+    --border: rgba(232, 207, 193, 0.12);
+    --border-subtle: rgba(232, 207, 193, 0.06);
+    --border-focus: #D99B84;
 
-    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.5);
-    --shadow: 0 4px 10px rgba(0, 0, 0, 0.55);
-    --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.65);
-    --shadow-xl: 0 20px 30px -6px rgba(0, 0, 0, 0.75);
+    --shadow-xs: 0 1px 2px 0 rgba(10, 8, 9, 0.35);
+    --shadow-sm: 0 1px 3px 0 rgba(10, 8, 9, 0.45);
+    --shadow: 0 4px 12px rgba(10, 8, 9, 0.55);
+    --shadow-lg: 0 12px 28px -4px rgba(10, 8, 9, 0.65);
+    --shadow-xl: 0 20px 36px -6px rgba(10, 8, 9, 0.75);
 
     --accent: var(--brand);
     --accent-light: var(--brand-light);
@@ -248,10 +260,11 @@ a {
 }
 
 .brand-name {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: var(--font-serif);
   color: var(--text);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.01em;
 }
 
 .brand-badge {
@@ -259,10 +272,10 @@ a {
   font-weight: 700;
   background: var(--brand-light);
   color: var(--brand);
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: var(--radius-pill);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   border: 1px solid var(--brand-border);
 }
 
@@ -292,11 +305,11 @@ a {
   align-items: center;
   gap: 8px;
   background: var(--brand);
-  color: #fff;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
+  color: var(--brand-text-contrast);
+  padding: 9px 14px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
   box-shadow: var(--shadow-sm);
   white-space: nowrap;
@@ -314,7 +327,8 @@ a {
   margin-left: auto;
   font-size: 10px;
   font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(20, 17, 18, 0.15);
+  color: var(--brand-text-contrast);
   padding: 2px 5px;
   border-radius: 4px;
 }
@@ -594,11 +608,11 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 7px 14px;
   background: var(--surface2);
   color: var(--text2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 500;
   transition: all 0.15s;
@@ -612,12 +626,12 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px;
+  padding: 7px 16px;
   background: var(--brand);
-  color: #fff;
-  border-radius: var(--radius-sm);
+  color: var(--brand-text-contrast);
+  border-radius: var(--radius-pill);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   transition: all 0.15s;
   box-shadow: var(--shadow-sm);
 }
@@ -652,12 +666,12 @@ a {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 18px;
+  padding: 18px 20px;
   box-shadow: var(--shadow-xs);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
   position: relative;
   overflow: hidden;
@@ -686,7 +700,7 @@ a {
 .kpi-icon-wrap {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -694,13 +708,13 @@ a {
 }
 
 .kpi-val {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 27px;
+  font-weight: 600;
   color: var(--text);
-  letter-spacing: -0.6px;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
-  font-family: var(--font);
+  font-family: var(--font-serif);
 }
 
 .kpi-footer {
@@ -740,10 +754,12 @@ a {
 }
 
 .kpi-card.kpi-savings {
-  border-left: 3px solid var(--warning);
+  border-left: 3px solid var(--gold);
 }
 .kpi-card.kpi-savings .kpi-icon-wrap {
-  background: var(--warning-light);
+  background: var(--gold-light);
+  color: var(--gold);
+}
   color: var(--warning);
 }
 
@@ -843,10 +859,11 @@ a {
   letter-spacing: 0.05em;
 }
 .donut-center-amount {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 600;
+  font-family: var(--font-serif);
   color: var(--text);
-  letter-spacing: -0.5px;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1118,16 +1135,34 @@ a {
   margin-top: 2px;
 }
 
-/* Category Pill */
+/* Category Pill & Line Icon Badges */
 .cat-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 3px 9px;
   border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.cat-line-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.cat-line-icon-badge.cat-custom-icon {
+  font-size: 12px;
+}
+.cat-line-icon-badge svg {
+  display: block;
 }
 
 /* Payment Method Tag */
@@ -1774,13 +1809,13 @@ a {
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 11px 18px;
+  padding: 11px 20px;
   background: var(--brand);
-  color: #ffffff;
+  color: var(--brand-text-contrast);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1797,7 +1832,7 @@ a {
   background: var(--surface2);
   color: var(--text2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -1822,13 +1857,13 @@ a {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 7px 14px;
+  padding: 7px 15px;
   font-size: 13px;
-  font-weight: 600;
-  color: #ffffff;
+  font-weight: 700;
+  color: var(--brand-text-contrast);
   background: var(--brand);
   border: 1px solid var(--brand);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: all 0.15s;
   box-shadow: var(--shadow-xs);
@@ -1843,13 +1878,13 @@ a {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 7px 14px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text2);
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1943,10 +1978,11 @@ a {
   margin-bottom: 20px;
 }
 .view-title {
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 26px;
+  font-weight: 600;
+  font-family: var(--font-serif);
   color: var(--text);
-  letter-spacing: -0.4px;
+  letter-spacing: -0.01em;
 }
 
 /* Overall Monthly Limit Card */
@@ -1965,7 +2001,7 @@ a {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--brand), #8b5cf6, var(--income));
+  background: linear-gradient(90deg, var(--brand), var(--gold), var(--income));
 }
 .overall-budget-header {
   display: flex;
@@ -1982,12 +2018,12 @@ a {
   margin-bottom: 4px;
 }
 .overall-budget-amount {
-  font-size: 32px;
-  font-weight: 800;
+  font-size: 34px;
+  font-weight: 600;
   color: var(--text);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   line-height: 1.1;
-  font-family: var(--font);
+  font-family: var(--font-serif);
   font-variant-numeric: tabular-nums;
   margin-top: 6px;
 }
@@ -2076,16 +2112,16 @@ a {
   height: 100%;
   border-radius: var(--radius-pill);
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  background: linear-gradient(90deg, #10b981, #059669);
+  background: linear-gradient(90deg, #7FB093, #6D9F80);
 }
 .progress-bar.ok {
-  background: linear-gradient(90deg, #10b981, #059669);
+  background: linear-gradient(90deg, #7FB093, #6D9F80);
 }
 .progress-bar.warn {
-  background: linear-gradient(90deg, #f59e0b, #d97706);
+  background: linear-gradient(90deg, #E0A96D, #D49856);
 }
 .progress-bar.over {
-  background: linear-gradient(90deg, #f43f5e, #e11d48);
+  background: linear-gradient(90deg, #D97272, #C65E5E);
 }
 
 /* Budget vs. Spending Comparison Chart Card */
@@ -2118,17 +2154,17 @@ a {
   flex-shrink: 0;
 }
 .budget-chart-legend .legend-dot.dot-budget {
-  background: rgba(99, 102, 241, 0.4);
-  border: 1.5px solid #6366f1;
+  background: rgba(223, 196, 152, 0.35);
+  border: 1.5px solid #DFC498;
 }
 .budget-chart-legend .legend-dot.dot-under {
-  background: #10b981;
+  background: #7FB093;
 }
 .budget-chart-legend .legend-dot.dot-warn {
-  background: #f59e0b;
+  background: #E0A96D;
 }
 .budget-chart-legend .legend-dot.dot-over {
-  background: #f43f5e;
+  background: #D97272;
 }
 .budget-chart-wrap {
   width: 100%;
@@ -2891,10 +2927,10 @@ a {
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.method-upi      { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
-.method-card     { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; border: 1px solid rgba(139, 92, 246, 0.25); }
-.method-cash     { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
-.method-transfer { background: rgba(14, 165, 233, 0.12); color: #0284c7; border: 1px solid rgba(14, 165, 233, 0.25); }
+.method-upi      { background: rgba(217, 155, 132, 0.14); color: #D99B84; border: 1px solid rgba(217, 155, 132, 0.28); }
+.method-card     { background: rgba(223, 196, 152, 0.14); color: #DFC498; border: 1px solid rgba(223, 196, 152, 0.28); }
+.method-cash     { background: rgba(127, 176, 147, 0.14); color: #7FB093; border: 1px solid rgba(127, 176, 147, 0.28); }
+.method-transfer { background: rgba(182, 137, 154, 0.14); color: #B6899A; border: 1px solid rgba(182, 137, 154, 0.28); }
 
 /* Transaction Type Badges */
 .txn-type-badge {

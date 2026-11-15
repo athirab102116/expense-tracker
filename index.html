@@ -9,15 +9,15 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Expenses">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0c0d0e" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#FAF7F5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141112" media="(prefers-color-scheme: dark)">
 
   <title>Expenses &mdash; Personal Finance Dashboard</title>
 
-  <!-- Google Sans / Inter / Roboto Mono -->
+  <!-- Editorial Quiet Luxury Fonts: Cormorant Garamond, Playfair Display & Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Google+Sans+Text:wght@400;500;600;700&family=Roboto+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
@@ -28,7 +28,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=64">
+  <link rel="stylesheet" href="css/app.css?v=65">
 </head>
 <body>
   <div id="app">
@@ -188,8 +188,12 @@
       <!-- Main Content Views -->
       <main id="main-content" role="main" class="main-content-scroll">
         <div class="empty-state" style="padding-top:100px">
-          <div style="font-size:48px;margin-bottom:16px">💳</div>
-          <div>Loading Dashboard...</div>
+          <div style="margin-bottom:16px">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#DFC498" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+          </div>
+          <div style="font-family:var(--font-serif);font-size:18px;color:var(--text3)">Loading Dashboard...</div>
         </div>
       </main>
     </div>
@@ -299,13 +303,13 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=64"></script>
+  <script type="module" src="js/app.js?v=65"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=64')
+        navigator.serviceWorker.register('sw.js?v=65')
           .then(r => console.log('SW registered:', r.scope))
           .catch(e => console.log('SW registration failed:', e));
       });

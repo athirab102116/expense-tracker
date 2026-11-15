@@ -2122,54 +2122,6 @@ a {
   background: linear-gradient(90deg, #D97272, #C65E5E);
 }
 
-/* Budget vs. Spending Comparison Chart Card */
-.budget-chart-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 22px;
-  margin-bottom: 24px;
-  box-shadow: var(--shadow-xs);
-}
-.budget-chart-legend {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.budget-chart-legend .legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text3);
-}
-.budget-chart-legend .legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-.budget-chart-legend .legend-dot.dot-budget {
-  background: rgba(223, 196, 152, 0.35);
-  border: 1.5px solid #DFC498;
-}
-.budget-chart-legend .legend-dot.dot-under {
-  background: #7FB093;
-}
-.budget-chart-legend .legend-dot.dot-warn {
-  background: #E0A96D;
-}
-.budget-chart-legend .legend-dot.dot-over {
-  background: #D97272;
-}
-.budget-chart-wrap {
-  width: 100%;
-  position: relative;
-  min-height: 220px;
-}
-
 /* Category Budgets Grid */
 .budget-section-header {
   display: flex;
@@ -2279,12 +2231,6 @@ a {
   }
   .overall-budget-amount {
     font-size: 26px;
-  }
-  .budget-chart-card {
-    padding: 16px 14px;
-  }
-  .budget-chart-legend {
-    gap: 10px;
   }
 }
 

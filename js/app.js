@@ -19,7 +19,6 @@ const state = {
   chart: null,
   trendChart: null,
   barChart: null,
-  budgetChart: null,
   storagePersisted: null,    // null=unknown, true=safe, false=at-risk
   sortCol: 'date',
   sortDir: 'desc',
@@ -1401,10 +1400,6 @@ async function renderView() {
 
   try {
     state.categories = await db.getAll('categories');
-    if (state.view !== 'budgets' && state.budgetChart && typeof state.budgetChart.destroy === 'function') {
-      try { state.budgetChart.destroy(); } catch (_) {}
-      state.budgetChart = null;
-    }
     if (state.view !== 'dashboard') {
       if (state.chart && typeof state.chart.destroy === 'function') {
         try { state.chart.destroy(); } catch (_) {}
@@ -2644,169 +2639,6 @@ function mountTransactions() {
 }
 
 // ─── Budgets ──────────────────────────────────────────────────────────────────
-function renderBudgetComparisonChart(monthBudgets, spentByCat) {
-  const canvas = document.getElementById('budgetComparisonChart');
-  if (!canvas || !window.Chart) return;
-
-  if (state.budgetChart && typeof state.budgetChart.destroy === 'function') {
-    try { state.budgetChart.destroy(); } catch (_) {}
-    state.budgetChart = null;
-  }
-
-  const budgetMap = {};
-  for (const b of monthBudgets) budgetMap[b.categoryId] = b.amount;
-
-  // Union of category IDs that have budgets or expenses
-  const allCatIds = Array.from(new Set([
-    ...monthBudgets.map(b => b.categoryId),
-    ...Object.keys(spentByCat).filter(c => spentByCat[c] > 0)
-  ]));
-
-  if (allCatIds.length === 0) return;
-
-  // Sort categories: highest budget first, then highest spending
-  allCatIds.sort((a, b) => {
-    const bA = budgetMap[a] || 0;
-    const bB = budgetMap[b] || 0;
-    if (bB !== bA) return bB - bA;
-    return (spentByCat[b] || 0) - (spentByCat[a] || 0);
-  });
-
-  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const gridColor = isDark ? 'rgba(232, 207, 193, 0.06)' : 'rgba(0,0,0,0.05)';
-  const textColor = isDark ? '#A89B95' : '#7D7073';
-  const labelColor = isDark ? '#F5EFEA' : '#262021';
-
-  const labels = allCatIds.map(id => getCat(id).name);
-
-  const budgetedData = allCatIds.map(id => budgetMap[id] || 0);
-  const spentData = allCatIds.map(id => spentByCat[id] || 0);
-
-  // Background and border colors for Spent bars:
-  // Over budget: muted terracotta crimson (#D97272)
-  // At exact limit or near (>=80%): warm amber (#E0A96D)
-  // Under budget (<80%): sage emerald (#7FB093)
-  const spentBgColors = allCatIds.map(id => {
-    const budget = budgetMap[id] || 0;
-    const spent = spentByCat[id] || 0;
-    if (budget > 0) {
-      if (spent > budget) return 'rgba(217, 114, 114, 0.88)';
-      if (spent === budget || spent >= budget * 0.8) return 'rgba(224, 169, 109, 0.88)';
-      return 'rgba(127, 176, 147, 0.88)';
-    }
-    return isDark ? 'rgba(168, 155, 149, 0.6)' : 'rgba(125, 112, 115, 0.6)';
-  });
-
-  const spentBorderColors = allCatIds.map(id => {
-    const budget = budgetMap[id] || 0;
-    const spent = spentByCat[id] || 0;
-    if (budget > 0) {
-      if (spent > budget) return '#D97272';
-      if (spent === budget || spent >= budget * 0.8) return '#E0A96D';
-      return '#7FB093';
-    }
-    return '#A89B95';
-  });
-
-  try {
-    state.budgetChart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Budgeted',
-            data: budgetedData,
-            backgroundColor: isDark ? 'rgba(223, 196, 152, 0.30)' : 'rgba(223, 196, 152, 0.38)',
-            borderColor: '#DFC498',
-            borderWidth: 1.5,
-            borderRadius: 4,
-            barPercentage: 0.75,
-            categoryPercentage: 0.75,
-          },
-          {
-            label: 'Actual Spent',
-            data: spentData,
-            backgroundColor: spentBgColors,
-            borderColor: spentBorderColors,
-            borderWidth: 1.5,
-            borderRadius: 4,
-            barPercentage: 0.75,
-            categoryPercentage: 0.75,
-          }
-        ]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: isDark ? 'rgba(30, 25, 27, 0.96)' : 'rgba(255, 255, 255, 0.96)',
-            titleColor: isDark ? '#F5EFEA' : '#141112',
-            bodyColor: isDark ? '#D8CECA' : '#4A4042',
-            borderColor: isDark ? 'rgba(223, 196, 152, 0.25)' : 'rgba(217, 155, 132, 0.25)',
-            borderWidth: 1,
-            padding: 12,
-            cornerRadius: 8,
-            callbacks: {
-              label: (ctx) => {
-                const val = ctx.raw || 0;
-                const catId = allCatIds[ctx.dataIndex];
-                const budget = budgetMap[catId] || 0;
-                if (ctx.datasetIndex === 0) {
-                  return `  Budgeted: ${fmtCurrency(val, true)}`;
-                } else {
-                  let statusInfo = '';
-                  if (budget > 0) {
-                    const diff = val - budget;
-                    if (diff > 0) {
-                      statusInfo = ` (Over by ${fmtCurrency(diff, true)})`;
-                    } else if (diff === 0) {
-                      statusInfo = ` (₹0.00 left • 100% used)`;
-                    } else {
-                      statusInfo = ` (${fmtCurrency(Math.abs(diff), true)} left)`;
-                    }
-                  } else {
-                    statusInfo = ` (No budget set)`;
-                  }
-                  return `  Actual Spent: ${fmtCurrency(val, true)}${statusInfo}`;
-                }
-              }
-            }
-          }
-        },
-        scales: {
-          x: {
-            grid: { color: gridColor },
-            border: { display: false },
-            ticks: {
-              color: textColor,
-              font: { size: 11 },
-              callback: (val) => {
-                if (val >= 100000) return '₹' + (val / 100000).toFixed(1) + 'L';
-                if (val >= 1000) return '₹' + (val / 1000).toFixed(0) + 'k';
-                return '₹' + val;
-              }
-            }
-          },
-          y: {
-            grid: { display: false },
-            border: { display: false },
-            ticks: {
-              color: labelColor,
-              font: { size: 12, weight: '600' }
-            }
-          }
-        }
-      }
-    });
-  } catch (err) {
-    console.warn('Budget comparison chart error:', err);
-  }
-}
-
 async function renderBudgets() {
   const month = state.currentMonth;
   const budgets = await db.getAll('budgets');
@@ -2889,31 +2721,6 @@ async function renderBudgets() {
     </div>
   </div>`;
 
-  // Collect all category IDs to compare (budgeted or with spending)
-  const budgetCatIds = monthBudgets.map(b => b.categoryId);
-  const spentCatIds = Object.keys(spentByCat).filter(c => spentByCat[c] > 0);
-  const allCatIds = Array.from(new Set([...budgetCatIds, ...spentCatIds]));
-  const chartHeight = Math.max(220, allCatIds.length * 42 + 50);
-
-  const comparisonChartCard = allCatIds.length > 0 ? `
-  <div class="budget-chart-card card">
-    <div class="card-header-row">
-      <div>
-        <div class="card-heading">Budget vs. Actual Spending</div>
-        <div class="card-subheading">Side-by-side comparison per category for ${monthLabel(month)}</div>
-      </div>
-      <div class="budget-chart-legend">
-        <span class="legend-item"><span class="legend-dot dot-budget"></span> Budgeted</span>
-        <span class="legend-item"><span class="legend-dot dot-under"></span> Under Budget</span>
-        <span class="legend-item"><span class="legend-dot dot-warn"></span> 80–100% Used</span>
-        <span class="legend-item"><span class="legend-dot dot-over"></span> Over Budget</span>
-      </div>
-    </div>
-    <div class="budget-chart-wrap" style="position:relative;height:${chartHeight}px">
-      <canvas id="budgetComparisonChart"></canvas>
-    </div>
-  </div>` : '';
-
   const budgetRows = monthBudgets.length === 0
     ? '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon">🎯</div><div class="empty-state-title">No category budgets yet</div><div class="empty-state-desc">Tap "+ Add Budget" to set category spending targets for this month.</div></div>'
     : monthBudgets.map(b => {
@@ -2971,7 +2778,6 @@ async function renderBudgets() {
     <button class="btn-primary-sm" id="add-budget">＋ Add Budget</button>
   </div>
   ${overallCard}
-  ${comparisonChartCard}
   <div class="budget-section-header">
     <div class="budget-section-label">Category Budgets</div>
   </div>
@@ -3005,16 +2811,6 @@ async function renderBudgets() {
 }
 
 async function mountBudgets() {
-  const month = state.currentMonth;
-  const budgets = await db.getAll('budgets');
-  const monthBudgets = budgets.filter(b => b.month === month);
-  const expenses = await db.getByIndex('expenses', 'month', month);
-  const allDebitExpenses = expenses.filter(e => e.type !== 'credit');
-  const spentByCat = {};
-  for (const e of allDebitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
-
-  renderBudgetComparisonChart(monthBudgets, spentByCat);
-
   const openAddBudget = () => {
     document.getElementById('b-id').value = '';
     document.getElementById('b-amount').value = '';

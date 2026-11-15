@@ -91,6 +91,20 @@ function isSavingsCategory(catId) {
   return false;
 }
 
+function getBudgetsForMonth(allBudgets, targetMonth) {
+  if (!allBudgets || allBudgets.length === 0) return [];
+  const direct = allBudgets.filter(b => b.month === targetMonth);
+  if (direct.length > 0) return direct;
+  // If no direct budgets for targetMonth, carry forward from the most recent month with budgets
+  const months = Array.from(new Set(allBudgets.map(b => b.month).filter(Boolean))).sort();
+  if (months.length > 0) {
+    const prior = months.filter(m => m <= targetMonth);
+    const chosen = prior.length > 0 ? prior[prior.length - 1] : months[months.length - 1];
+    return allBudgets.filter(b => b.month === chosen);
+  }
+  return [];
+}
+
 function getCatBadge(cat, size = 14) {
   if (!cat) return '';
   const id = (cat.id || '').toLowerCase();
@@ -1507,23 +1521,34 @@ async function renderDashboard() {
   const expenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === month);
   const prevExpenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === prevMonth);
 
+  // Fetch budgets to set Total Income as Total Budgeted Amount (fallback to credits if none exist)
+  const allBudgets = await db.getAll('budgets');
+  const monthBudgets = getBudgetsForMonth(allBudgets, month);
+  const totalBudgeted = monthBudgets.reduce((s, b) => s + b.amount, 0);
+
   // Separate Income (Credit), Living Expenses (Debit excluding Savings), and Savings (Debit in Savings category)
   const incomeExpenses = expenses.filter(e => e.type === 'credit');
+  const creditIncomeTotal = incomeExpenses.reduce((s, e) => s + e.amount, 0);
   const savingsExpenses = expenses.filter(e => e.type !== 'credit' && isSavingsCategory(e.category));
   const debitExpenses = expenses.filter(e => e.type !== 'credit' && !isSavingsCategory(e.category));
 
-  const incomeTotal = incomeExpenses.reduce((s, e) => s + e.amount, 0);
+  // User requirement: set total income as total budgeted amount
+  const isBudgetedIncome = totalBudgeted > 0;
+  const incomeTotal = isBudgetedIncome ? totalBudgeted : creditIncomeTotal;
   const savingsTotal = savingsExpenses.reduce((s, e) => s + e.amount, 0);
   const expenseTotal = debitExpenses.reduce((s, e) => s + e.amount, 0);
   const netBalance = incomeTotal - expenseTotal;
 
-  // Previous month comparison (excluding savings for living expense trends)
-  const prevIncomeTotal = prevExpenses.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
+  // Previous month comparison (using prev total budgeted if available, else credit income)
+  const prevMonthBudgets = getBudgetsForMonth(allBudgets, prevMonth);
+  const prevTotalBudgeted = prevMonthBudgets.reduce((s, b) => s + b.amount, 0);
+  const prevCreditIncome = prevExpenses.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
+  const prevIncomeTotal = prevTotalBudgeted > 0 ? prevTotalBudgeted : prevCreditIncome;
   const prevExpenseTotal = prevExpenses.filter(e => e.type !== 'credit' && !isSavingsCategory(e.category)).reduce((s, e) => s + e.amount, 0);
   const expenseDiff = expenseTotal - prevExpenseTotal;
   const diffPct = prevExpenseTotal > 0 ? ((expenseDiff / prevExpenseTotal) * 100).toFixed(0) : '';
 
-  // Savings rate calculation explicitly linked to tracked savings in the savings category
+  // Savings rate calculation linked to tracked savings vs total budgeted income
   const savingsRate = incomeTotal > 0
     ? ((savingsTotal / incomeTotal) * 100).toFixed(1)
     : (savingsTotal > 0 ? '100.0' : '0.0');
@@ -1659,7 +1684,7 @@ async function renderDashboard() {
       </div>
       <div class="kpi-footer">
         <span class="kpi-badge ${netBalance >= 0 ? 'positive' : 'negative'}">${netBalance >= 0 ? 'Surplus' : 'Deficit'}</span>
-        <span>${expenses.length === 0 ? 'No activity this month' : (savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved · ${fmtCurrency(incomeTotal - expenseTotal - savingsTotal, true)} cash left` : (netBalance >= 0 ? 'Cash flow positive' : 'Expenses exceed income'))}</span>
+        <span>${isBudgetedIncome ? (savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved · ${fmtCurrency(incomeTotal - expenseTotal - savingsTotal, true)} unallocated` : `${fmtCurrency(netBalance, true)} unspent`) : (expenses.length === 0 ? 'No activity this month' : (savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved · ${fmtCurrency(incomeTotal - expenseTotal - savingsTotal, true)} cash left` : (netBalance >= 0 ? 'Cash flow positive' : 'Expenses exceed income')))}</span>
       </div>
     </div>
 
@@ -1677,7 +1702,7 @@ async function renderDashboard() {
       <div class="kpi-val">${fmtCurrency(incomeTotal, true)}</div>
       <div class="kpi-footer">
         <span class="kpi-badge positive">●</span>
-        <span>${incomeExpenses.length} credit${incomeExpenses.length !== 1 ? 's' : ''} in ${monthLabel(month)}</span>
+        <span>${isBudgetedIncome ? `Total budgeted (${monthBudgets.length} categor${monthBudgets.length !== 1 ? 'ies' : 'y'})` : `${incomeExpenses.length} credit${incomeExpenses.length !== 1 ? 's' : ''} in ${monthLabel(month)}`}</span>
       </div>
     </div>
 
@@ -1713,7 +1738,7 @@ async function renderDashboard() {
       <div class="kpi-val">${incomeTotal > 0 ? `${savingsRate}%` : (savingsTotal > 0 ? fmtCurrency(savingsTotal, true) : '0.0%')}</div>
       <div class="kpi-footer">
         <span class="kpi-badge ${parseFloat(savingsRate) >= 20 ? 'positive' : (savingsTotal > 0 ? 'positive' : 'neutral')}">●</span>
-        <span>${savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved${incomeTotal > 0 ? ` (${savingsRate}% of income)` : ''}` : (incomeTotal > 0 ? 'No savings tracked' : 'Track via Savings category')}</span>
+        <span>${savingsTotal > 0 ? `${fmtCurrency(savingsTotal, true)} saved${incomeTotal > 0 ? ` (${savingsRate}% of ${isBudgetedIncome ? 'budget' : 'income'})` : ''}` : (incomeTotal > 0 ? 'No savings tracked' : 'Track via Savings category')}</span>
       </div>
     </div>
   </div>

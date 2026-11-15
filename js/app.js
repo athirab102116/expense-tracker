@@ -19,6 +19,7 @@ const state = {
   chart: null,
   trendChart: null,
   barChart: null,
+  budgetChart: null,
   storagePersisted: null,    // null=unknown, true=safe, false=at-risk
   sortCol: 'date',
   sortDir: 'desc',
@@ -1334,6 +1335,20 @@ async function renderView() {
 
   try {
     state.categories = await db.getAll('categories');
+    if (state.view !== 'budgets' && state.budgetChart && typeof state.budgetChart.destroy === 'function') {
+      try { state.budgetChart.destroy(); } catch (_) {}
+      state.budgetChart = null;
+    }
+    if (state.view !== 'dashboard') {
+      if (state.chart && typeof state.chart.destroy === 'function') {
+        try { state.chart.destroy(); } catch (_) {}
+        state.chart = null;
+      }
+      if (state.barChart && typeof state.barChart.destroy === 'function') {
+        try { state.barChart.destroy(); } catch (_) {}
+        state.barChart = null;
+      }
+    }
     switch (state.view) {
       case 'dashboard':    main.innerHTML = await renderDashboard(); await mountDashboard(); break;
       case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
@@ -2510,22 +2525,212 @@ function mountTransactions() {
 }
 
 // ─── Budgets ──────────────────────────────────────────────────────────────────
+function renderBudgetComparisonChart(monthBudgets, spentByCat) {
+  const canvas = document.getElementById('budgetComparisonChart');
+  if (!canvas || !window.Chart) return;
+
+  if (state.budgetChart && typeof state.budgetChart.destroy === 'function') {
+    try { state.budgetChart.destroy(); } catch (_) {}
+    state.budgetChart = null;
+  }
+
+  const budgetMap = {};
+  for (const b of monthBudgets) budgetMap[b.categoryId] = b.amount;
+
+  // Union of category IDs that have budgets or expenses
+  const allCatIds = Array.from(new Set([
+    ...monthBudgets.map(b => b.categoryId),
+    ...Object.keys(spentByCat).filter(c => spentByCat[c] > 0)
+  ]));
+
+  if (allCatIds.length === 0) return;
+
+  // Sort categories: highest budget first, then highest spending
+  allCatIds.sort((a, b) => {
+    const bA = budgetMap[a] || 0;
+    const bB = budgetMap[b] || 0;
+    if (bB !== bA) return bB - bA;
+    return (spentByCat[b] || 0) - (spentByCat[a] || 0);
+  });
+
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+  const labelColor = isDark ? '#f1f5f9' : '#0f172a';
+
+  const labels = allCatIds.map(id => {
+    const c = getCat(id);
+    return `${c.emoji} ${c.name}`;
+  });
+
+  const budgetedData = allCatIds.map(id => budgetMap[id] || 0);
+  const spentData = allCatIds.map(id => spentByCat[id] || 0);
+
+  // Background and border colors for Spent bars:
+  // Over budget: red/rose (#f43f5e)
+  // At exact limit or near (>=80%): amber (#f59e0b)
+  // Under budget (<80%): green/emerald (#10b981)
+  const spentBgColors = allCatIds.map(id => {
+    const budget = budgetMap[id] || 0;
+    const spent = spentByCat[id] || 0;
+    if (budget > 0) {
+      if (spent > budget) return 'rgba(244, 63, 94, 0.85)';
+      if (spent === budget || spent >= budget * 0.8) return 'rgba(245, 158, 11, 0.85)';
+      return 'rgba(16, 185, 129, 0.85)';
+    }
+    return isDark ? 'rgba(148, 163, 184, 0.6)' : 'rgba(100, 116, 139, 0.6)';
+  });
+
+  const spentBorderColors = allCatIds.map(id => {
+    const budget = budgetMap[id] || 0;
+    const spent = spentByCat[id] || 0;
+    if (budget > 0) {
+      if (spent > budget) return '#f43f5e';
+      if (spent === budget || spent >= budget * 0.8) return '#f59e0b';
+      return '#10b981';
+    }
+    return '#94a3b8';
+  });
+
+  try {
+    state.budgetChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Budgeted',
+            data: budgetedData,
+            backgroundColor: isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.20)',
+            borderColor: 'rgba(99, 102, 241, 0.95)',
+            borderWidth: 1.5,
+            borderRadius: 4,
+            barPercentage: 0.75,
+            categoryPercentage: 0.75,
+          },
+          {
+            label: 'Actual Spent',
+            data: spentData,
+            backgroundColor: spentBgColors,
+            borderColor: spentBorderColors,
+            borderWidth: 1.5,
+            borderRadius: 4,
+            barPercentage: 0.75,
+            categoryPercentage: 0.75,
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: isDark ? 'rgba(20, 21, 23, 0.96)' : 'rgba(15, 23, 42, 0.95)',
+            titleColor: '#ffffff',
+            bodyColor: '#cbd5e1',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 8,
+            callbacks: {
+              label: (ctx) => {
+                const val = ctx.raw || 0;
+                const catId = allCatIds[ctx.dataIndex];
+                const budget = budgetMap[catId] || 0;
+                if (ctx.datasetIndex === 0) {
+                  return `  Budgeted: ${fmtCurrency(val, true)}`;
+                } else {
+                  let statusInfo = '';
+                  if (budget > 0) {
+                    const diff = val - budget;
+                    if (diff > 0) {
+                      statusInfo = ` (Over by ${fmtCurrency(diff, true)})`;
+                    } else if (diff === 0) {
+                      statusInfo = ` (₹0.00 left • 100% used)`;
+                    } else {
+                      statusInfo = ` (${fmtCurrency(Math.abs(diff), true)} left)`;
+                    }
+                  } else {
+                    statusInfo = ` (No budget set)`;
+                  }
+                  return `  Actual Spent: ${fmtCurrency(val, true)}${statusInfo}`;
+                }
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: gridColor },
+            border: { display: false },
+            ticks: {
+              color: textColor,
+              font: { size: 11 },
+              callback: (val) => {
+                if (val >= 100000) return '₹' + (val / 100000).toFixed(1) + 'L';
+                if (val >= 1000) return '₹' + (val / 1000).toFixed(0) + 'k';
+                return '₹' + val;
+              }
+            }
+          },
+          y: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: labelColor,
+              font: { size: 12, weight: '600' }
+            }
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('Budget comparison chart error:', err);
+  }
+}
+
 async function renderBudgets() {
   const month = state.currentMonth;
   const budgets = await db.getAll('budgets');
   const monthBudgets = budgets.filter(b => b.month === month);
   const expenses = await db.getByIndex('expenses', 'month', month);
+  const debitExpenses = expenses.filter(e => e.type !== 'credit');
   const spentByCat = {};
-  for (const e of expenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
+  for (const e of debitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
 
-  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalSpent = debitExpenses.reduce((s, e) => s + e.amount, 0);
 
   // Monthly limit is always derived: the sum of all category budgets
   const overallBudget = monthBudgets.reduce((s, b) => s + b.amount, 0);
 
-  // Overall budget card
-  const ovPct = overallBudget > 0 ? Math.min((totalSpent / overallBudget) * 100, 100) : 0;
-  const ovStatus = ovPct >= 100 ? 'over' : ovPct >= 80 ? 'warn' : 'ok';
+  // Overall budget card calculation with accurate exact-limit logic
+  const ovPct = overallBudget > 0 ? (totalSpent / overallBudget) * 100 : 0;
+  const ovBarPct = Math.min(ovPct, 100);
+  let ovStatus = 'ok';
+  let ovRemainingLabel = 'Left';
+  let ovValClass = 'success-text';
+
+  if (overallBudget > 0) {
+    if (totalSpent > overallBudget) {
+      ovStatus = 'over';
+      ovRemainingLabel = 'Over by';
+      ovValClass = 'danger-text';
+    } else if (totalSpent === overallBudget) {
+      ovStatus = 'warn';
+      ovRemainingLabel = 'Left';
+      ovValClass = 'warn-text';
+    } else if (ovPct >= 80) {
+      ovStatus = 'warn';
+      ovRemainingLabel = 'Left';
+      ovValClass = 'warn-text';
+    } else {
+      ovStatus = 'ok';
+      ovRemainingLabel = 'Left';
+      ovValClass = 'success-text';
+    }
+  }
   const ovRemaining = overallBudget - totalSpent;
 
   const overallCard = overallBudget > 0 ? `
@@ -2536,55 +2741,100 @@ async function renderBudgets() {
         <div class="hint-text" style="margin:0 0 2px">Auto-adjusts to the sum of your category budgets</div>
         <div class="overall-budget-amount">${fmt(overallBudget)}</div>
       </div>
+      <button class="btn-primary-sm" id="add-budget-btn">＋ Add Budget</button>
     </div>
-    <div class="progress-bar-wrap" style="margin-top:14px;height:10px">
-      <div class="progress-bar ${ovStatus}" style="width:${ovPct.toFixed(1)}%"></div>
+    <div class="progress-bar-wrap" style="margin-top:16px;height:10px">
+      <div class="progress-bar ${ovStatus}" style="width:${ovBarPct.toFixed(1)}%"></div>
     </div>
     <div class="overall-budget-stats">
       <div class="overall-budget-stat">
-        <span class="overall-budget-stat-label">Spent</span>
+        <span class="overall-budget-stat-label">Total Spent</span>
         <span class="overall-budget-stat-val">${fmt(totalSpent)}</span>
       </div>
       <div class="overall-budget-stat overall-budget-stat-center">
         <span class="overall-budget-stat-pct ${ovStatus}-text">${ovPct.toFixed(0)}%</span>
+        <span class="overall-budget-stat-sub">of budget</span>
       </div>
       <div class="overall-budget-stat overall-budget-stat-right">
-        <span class="overall-budget-stat-label">${ovRemaining < 0 ? 'Over by' : 'Left'}</span>
-        <span class="overall-budget-stat-val ${ovRemaining < 0 ? 'danger-text' : 'success-text'}">${fmt(Math.abs(ovRemaining))}</span>
+        <span class="overall-budget-stat-label">${ovRemainingLabel}</span>
+        <span class="overall-budget-stat-val ${ovValClass}">${fmt(Math.abs(ovRemaining))}</span>
       </div>
     </div>
   </div>` : `
   <div class="overall-budget-empty card">
     <div class="overall-budget-empty-inner">
       <div class="overall-budget-empty-icon">🎯</div>
-      <div>
-        <div style="font-weight:700;font-size:15px;margin-bottom:3px">Monthly limit: not set</div>
-        <div class="hint-text" style="margin:0">Add category budgets — the limit is the sum of all of them</div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:16px;margin-bottom:3px">Monthly limit: not set</div>
+        <div class="hint-text" style="margin:0">Add category budgets — the limit will automatically calculate as their sum.</div>
       </div>
+      <button class="btn-primary-sm" id="add-budget-btn">＋ Add Budget</button>
     </div>
   </div>`;
 
+  // Collect all category IDs to compare (budgeted or with spending)
+  const budgetCatIds = monthBudgets.map(b => b.categoryId);
+  const spentCatIds = Object.keys(spentByCat).filter(c => spentByCat[c] > 0);
+  const allCatIds = Array.from(new Set([...budgetCatIds, ...spentCatIds]));
+  const chartHeight = Math.max(220, allCatIds.length * 42 + 50);
+
+  const comparisonChartCard = allCatIds.length > 0 ? `
+  <div class="budget-chart-card card">
+    <div class="card-header-row">
+      <div>
+        <div class="card-heading">Budget vs. Actual Spending</div>
+        <div class="card-subheading">Side-by-side comparison per category for ${monthLabel(month)}</div>
+      </div>
+      <div class="budget-chart-legend">
+        <span class="legend-item"><span class="legend-dot dot-budget"></span> Budgeted</span>
+        <span class="legend-item"><span class="legend-dot dot-under"></span> Under Budget</span>
+        <span class="legend-item"><span class="legend-dot dot-warn"></span> 80–100% Used</span>
+        <span class="legend-item"><span class="legend-dot dot-over"></span> Over Budget</span>
+      </div>
+    </div>
+    <div class="budget-chart-wrap" style="position:relative;height:${chartHeight}px">
+      <canvas id="budgetComparisonChart"></canvas>
+    </div>
+  </div>` : '';
+
   const budgetRows = monthBudgets.length === 0
-    ? '<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-title">No budgets yet</div><div class="empty-sub">Tap + to set a budget for this month</div></div>'
+    ? '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon">🎯</div><div class="empty-state-title">No category budgets yet</div><div class="empty-state-desc">Tap "+ Add Budget" to set category spending targets for this month.</div></div>'
     : monthBudgets.map(b => {
         const cat = getCat(b.categoryId);
         const spent = spentByCat[b.categoryId] || 0;
-        const pct = Math.min((spent / b.amount) * 100, 100);
-        const status = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok';
+        const pct = b.amount > 0 ? (spent / b.amount) * 100 : 0;
+        const barPct = Math.min(pct, 100);
+
+        let status = 'ok';
+        let leftText = '';
+        if (spent > b.amount) {
+          status = 'over';
+          leftText = `Over by ${fmt(spent - b.amount)}`;
+        } else if (spent === b.amount) {
+          status = 'warn';
+          leftText = `₹0.00 left (100% used)`;
+        } else if (pct >= 80) {
+          status = 'warn';
+          leftText = `${fmt(b.amount - spent)} left`;
+        } else {
+          status = 'ok';
+          leftText = `${fmt(b.amount - spent)} left`;
+        }
+
         return `
-          <div class="budget-item card" data-id="${b.id}" style="border-left:4px solid ${cat.color}">
+          <div class="budget-item card" data-id="${b.id}" style="border-left:4px solid ${cat.color || 'var(--brand)'}">
             <div class="budget-top">
               <span class="budget-cat">${cat.emoji} ${cat.name}</span>
               <span class="budget-amounts ${status}">${fmt(spent)} / ${fmt(b.amount)}</span>
             </div>
             <div class="progress-bar-wrap">
-              <div class="progress-bar ${status}" style="width:${pct.toFixed(1)}%"></div>
+              <div class="progress-bar ${status}" style="width:${barPct.toFixed(1)}%"></div>
             </div>
             <div class="budget-bottom">
               <span class="budget-left ${status}">
-                ${pct >= 100 ? `Over by ${fmt(spent - b.amount)}` : `${fmt(b.amount - spent)} left`}
+                ${leftText}
               </span>
-              <button class="btn-link" data-budget-edit="${b.id}" data-budget-cat="${b.categoryId}" data-budget-amount="${b.amount}">Edit</button>
+              <button class="btn-link btn-budget-edit" data-budget-edit="${b.id}" data-budget-cat="${b.categoryId}" data-budget-amount="${b.amount}">Edit</button>
             </div>
           </div>
         `;
@@ -2597,18 +2847,27 @@ async function renderBudgets() {
   return `
 <div class="view-budgets">
   <div class="view-header">
-    <h2 class="view-title">Budgets — ${monthLabel(month)}</h2>
-    <button class="btn-icon" id="add-budget">＋</button>
+    <div>
+      <h2 class="view-title">Budgets</h2>
+      <div class="card-subheading">${monthLabel(month)}</div>
+    </div>
+    <button class="btn-primary-sm" id="add-budget">＋ Add Budget</button>
   </div>
   ${overallCard}
-  ${monthBudgets.length > 0 ? `<div class="budget-section-label">By category</div>` : ''}
+  ${comparisonChartCard}
+  <div class="budget-section-header">
+    <div class="budget-section-label">Category Budgets</div>
+  </div>
   <div id="budget-list">${budgetRows}</div>
 </div>
 
 <div class="modal" id="budget-modal">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
-    <div class="modal-title" id="budget-modal-title">Set Budget</div>
+    <div class="modal-header">
+      <div class="modal-title" id="budget-modal-title">Set Budget</div>
+      <button type="button" class="modal-close-btn" id="close-budget-modal-btn">✕</button>
+    </div>
     <form id="budget-form">
       <input type="hidden" id="b-id">
       <input type="hidden" id="b-cat-id">
@@ -2616,25 +2875,40 @@ async function renderBudgets() {
       <select id="b-cat" class="field-input">${catOptionsForModal}</select>
       <label class="field-label">Monthly Budget (₹)</label>
       <input type="number" id="b-amount" inputmode="decimal" placeholder="0" class="field-input" required min="1" step="1">
-      <button type="submit" class="btn-primary">Save Budget</button>
-      <button type="button" class="btn-secondary" id="cancel-budget">Cancel</button>
-      <button type="button" class="btn-secondary danger" id="delete-budget" style="display:none">Delete Budget</button>
-      <button type="button" class="btn-secondary danger" id="delete-budget-cat" style="display:none">Delete Category</button>
+      <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px">
+        <button type="submit" class="btn-primary" style="margin-top:0">Save Budget</button>
+        <button type="button" class="btn-secondary" id="cancel-budget" style="margin-top:0">Cancel</button>
+        <button type="button" class="btn-secondary danger" id="delete-budget" style="display:none;margin-top:0">Delete Budget</button>
+        <button type="button" class="btn-secondary danger" id="delete-budget-cat" style="display:none;margin-top:0">Delete Category</button>
+      </div>
     </form>
   </div>
 </div>
 `;
 }
 
-function mountBudgets() {
-  document.getElementById('add-budget')?.addEventListener('click', () => {
+async function mountBudgets() {
+  const month = state.currentMonth;
+  const budgets = await db.getAll('budgets');
+  const monthBudgets = budgets.filter(b => b.month === month);
+  const expenses = await db.getByIndex('expenses', 'month', month);
+  const debitExpenses = expenses.filter(e => e.type !== 'credit');
+  const spentByCat = {};
+  for (const e of debitExpenses) spentByCat[e.category] = (spentByCat[e.category] || 0) + e.amount;
+
+  renderBudgetComparisonChart(monthBudgets, spentByCat);
+
+  const openAddBudget = () => {
     document.getElementById('b-id').value = '';
     document.getElementById('b-amount').value = '';
     document.getElementById('budget-modal-title').textContent = 'Set Budget';
     document.getElementById('delete-budget').style.display = 'none';
     document.getElementById('delete-budget-cat').style.display = 'none';
     openModal('budget-modal');
-  });
+  };
+
+  document.getElementById('add-budget')?.addEventListener('click', openAddBudget);
+  document.getElementById('add-budget-btn')?.addEventListener('click', openAddBudget);
 
   document.querySelectorAll('[data-budget-edit]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2675,6 +2949,7 @@ function mountBudgets() {
   });
 
   document.getElementById('cancel-budget')?.addEventListener('click', () => closeModal('budget-modal'));
+  document.getElementById('close-budget-modal-btn')?.addEventListener('click', () => closeModal('budget-modal'));
   document.getElementById('budget-modal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal('budget-modal');
   });
@@ -2691,7 +2966,7 @@ function mountBudgets() {
     const id = `${catId}-${state.currentMonth}`;
     await db.put('budgets', { id, categoryId: catId, month: state.currentMonth, amount });
     closeModal('budget-modal');
-    showToast('Budget saved!');
+    showToast('Budget saved!', 'success');
     renderView();
   });
 }

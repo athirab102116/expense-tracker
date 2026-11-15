@@ -1,12 +1,12 @@
-const CACHE = 'expense-tracker-v60';
+const CACHE = 'expense-tracker-v61';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './css/app.css',
-  './css/app.css?v=60',
+  './css/app.css?v=61',
   './js/app.js',
-  './js/app.js?v=60',
+  './js/app.js?v=61',
   './js/db.js',
   './js/categories.js',
   './js/audio.js',
@@ -14,13 +14,14 @@ const ASSETS = [
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon.svg',
 ];
 
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
       .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())   // take over immediately, don't wait for old tabs to close
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -28,9 +29,8 @@ self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())  // claim all open tabs right away
+      .then(() => self.clients.claim())
       .then(() => {
-        // Tell every open tab to reload so they get the fresh files
         return self.clients.matchAll({ type: 'window' }).then(clients => {
           clients.forEach(client => client.navigate(client.url));
         });

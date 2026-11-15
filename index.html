@@ -10,14 +10,14 @@
   <meta name="apple-mobile-web-app-title" content="Expenses">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#0c0d0e" media="(prefers-color-scheme: dark)">
 
-  <title>Expenses</title>
+  <title>Expenses &mdash; Personal Finance Dashboard</title>
 
-  <!-- Google Sans / Roboto Fonts -->
+  <!-- Google Sans / Inter / Roboto Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Google+Sans+Text:wght@400;500;600;700&family=Roboto+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
@@ -28,51 +28,225 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=60">
+  <link rel="stylesheet" href="css/app.css?v=61">
 </head>
 <body>
   <div id="app">
-    <main id="main-content" role="main">
-      <!-- Views render here -->
-      <div class="empty-state" style="padding-top:80px">
-        <div style="font-size:48px;margin-bottom:16px">💳</div>
-        <div>Loading Expenses...</div>
-      </div>
-    </main>
+    <!-- Slide-over Backdrop for Mobile / Tablet drawer -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
-    <!-- Bottom Navigation / Sidebar -->
-    <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
-      <div class="nav-brand">
-        <img src="icons/icon.svg" width="30" height="30" alt="Expenses Logo" class="nav-brand-logo">
-        <span class="nav-brand-name">Expenses</span>
+    <!-- Collapsible Sidebar (Desktop & Mobile Drawer) -->
+    <aside id="app-sidebar" class="app-sidebar" role="navigation" aria-label="Main sidebar navigation">
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <img src="icons/icon.svg" width="32" height="32" alt="Expenses Logo" class="brand-logo">
+          <div class="brand-text">
+            <span class="brand-name">Expenses</span>
+            <span class="brand-badge">Pro</span>
+          </div>
+        </div>
+        <button id="sidebar-collapse-btn" class="sidebar-toggle-icon-btn" aria-label="Collapse sidebar" title="Toggle Sidebar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="3" x2="9" y2="21"></line>
+            <path d="M14 9l-3 3 3 3"></path>
+          </svg>
+        </button>
       </div>
-      <button class="nav-item active" data-view="dashboard" aria-label="Dashboard">
-        <span class="nav-icon-wrap"><svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect></svg></span>
+
+      <!-- Quick Action: Primary + Add Transaction -->
+      <div class="sidebar-quick-action">
+        <button class="btn-sidebar-add" id="sidebar-add-btn" aria-label="Add transaction">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span class="nav-label">Add Transaction</span>
+          <span class="sidebar-kbd">N</span>
+        </button>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-view="dashboard" aria-label="Dashboard" data-tooltip="Dashboard">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="9" rx="1.5"></rect>
+              <rect x="14" y="3" width="7" height="5" rx="1.5"></rect>
+              <rect x="14" y="12" width="7" height="9" rx="1.5"></rect>
+              <rect x="3" y="16" width="7" height="5" rx="1.5"></rect>
+            </svg>
+          </span>
+          <span class="nav-label">Dashboard</span>
+        </button>
+
+        <button class="nav-item" data-view="transactions" aria-label="Transactions" data-tooltip="Transactions">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+          </span>
+          <span class="nav-label">Transactions</span>
+        </button>
+
+        <button class="nav-item" data-view="budgets" aria-label="Budgets" data-tooltip="Budgets">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+          </span>
+          <span class="nav-label">Budgets</span>
+        </button>
+
+        <button class="nav-item" data-view="settings" aria-label="Settings" data-tooltip="Settings">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Settings</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div class="sidebar-footer">
+        <button class="sidebar-tool-btn" id="open-import-sidebar" title="Import / Parse Bank Emails & Statements">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span class="nav-label">Import / Parse</span>
+        </button>
+        <div class="sidebar-footer-row">
+          <button class="sfx-toggle" id="sfx-toggle" aria-label="Toggle sounds" title="Toggle audio cues">🔊</button>
+          <span class="offline-badge" id="storage-status" title="Local Offline Storage Active">● Local</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace Container -->
+    <div class="workspace-wrap">
+      <!-- Top Production-Grade Header Bar -->
+      <header class="top-header" role="banner">
+        <div class="top-header-left">
+          <button id="sidebar-toggle-btn" class="sidebar-hamburger-btn" aria-label="Toggle sidebar menu" title="Toggle Navigation">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div class="view-breadcrumb">
+            <span class="breadcrumb-app">Expenses</span>
+            <span class="breadcrumb-slash">/</span>
+            <span class="breadcrumb-view" id="header-view-title">Dashboard</span>
+          </div>
+        </div>
+
+        <div class="top-header-center">
+          <!-- Month Switcher (accessible across all views) -->
+          <div class="header-month-switcher" id="header-month-nav">
+            <button class="month-pill-btn prev" id="header-prev-month" aria-label="Previous month" title="Previous Month">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <span class="header-month-label" id="header-month-label">March 2026</span>
+            <button class="month-pill-btn next" id="header-next-month" aria-label="Next month" title="Next Month">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="header-today-btn" id="header-today-btn" title="Jump to Current Month">Today</button>
+          </div>
+        </div>
+
+        <div class="top-header-right">
+          <button class="btn-header-secondary" id="header-import-btn" title="Import from Bank Emails, Statements, or Excel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Import</span>
+          </button>
+          <button class="btn-header-primary" id="header-add-btn" title="Add New Transaction (N)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>New Transaction</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Content Views -->
+      <main id="main-content" role="main" class="main-content-scroll">
+        <div class="empty-state" style="padding-top:100px">
+          <div style="font-size:48px;margin-bottom:16px">💳</div>
+          <div>Loading Dashboard...</div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation (clean thumb bar on mobile screens) -->
+    <nav class="mobile-bottom-nav" role="navigation" aria-label="Mobile Navigation">
+      <button class="mobile-nav-item active" data-view="dashboard" aria-label="Dashboard">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="9" rx="1.5"></rect>
+          <rect x="14" y="3" width="7" height="5" rx="1.5"></rect>
+          <rect x="14" y="12" width="7" height="9" rx="1.5"></rect>
+          <rect x="3" y="16" width="7" height="5" rx="1.5"></rect>
+        </svg>
         <span>Insights</span>
       </button>
-      <button class="nav-item" data-view="transactions" aria-label="Transactions">
-        <span class="nav-icon-wrap"><svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span>
+
+      <button class="mobile-nav-item" data-view="transactions" aria-label="Transactions">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
         <span>Activity</span>
       </button>
-      <button class="nav-item add-nav" data-view="add" aria-label="Add expense">
-        <div class="m3-fab">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+
+      <button class="mobile-nav-item mobile-fab-item" id="mobile-quick-add" aria-label="Add transaction">
+        <div class="mobile-fab">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
         </div>
-        <span class="m3-fab-label">Add</span>
       </button>
-      <button class="nav-item" data-view="budgets" aria-label="Budgets">
-        <span class="nav-icon-wrap"><svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></span>
+
+      <button class="mobile-nav-item" data-view="budgets" aria-label="Budgets">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="6"></circle>
+          <circle cx="12" cy="12" r="2"></circle>
+        </svg>
         <span>Budgets</span>
       </button>
-      <button class="nav-item" data-view="settings" aria-label="Settings">
-        <span class="nav-icon-wrap"><svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+
+      <button class="mobile-nav-item" data-view="settings" aria-label="Settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
         <span>Settings</span>
       </button>
-      <button class="sfx-toggle" id="sfx-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
     </nav>
   </div>
 
-  <!-- Add / Edit Expense Modal (global, always present) -->
+  <!-- Add / Edit Transaction Modal (global modal with Debit/Credit toggle) -->
   <div class="modal" id="add-modal">
     <div class="modal-sheet modal-sheet-lg">
       <div class="modal-handle"></div>
@@ -80,7 +254,7 @@
     </div>
   </div>
 
-  <!-- Import Expenses Modal (global, always present) -->
+  <!-- Dedicated Import / Bank Email Parser Modal -->
   <div class="modal" id="import-modal">
     <div class="modal-sheet modal-sheet-xl">
       <div class="modal-handle"></div>
@@ -96,7 +270,7 @@
     </div>
   </div>
 
-  <!-- Add Category Modal -->
+  <!-- Add / Edit Category Modal -->
   <div class="modal" id="cat-add-modal">
     <div class="modal-sheet">
       <div class="modal-handle"></div>
@@ -104,7 +278,7 @@
     </div>
   </div>
 
-  <!-- Category clarification modal (global, always present) -->
+  <!-- Category clarification modal -->
   <div class="modal" id="clarify-modal">
     <div class="modal-sheet">
       <div class="modal-handle"></div>
@@ -118,20 +292,20 @@
     </div>
   </div>
 
-  <!-- Google Identity Services (for Gmail OAuth) — load synchronously so it's ready before any module JS -->
+  <!-- Google Identity Services (for Gmail OAuth) -->
   <script src="https://accounts.google.com/gsi/client"></script>
   <!-- Chart.js (bundled locally) -->
   <script src="lib/chart.umd.min.js"></script>
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <!-- App -->
-  <script type="module" src="js/app.js?v=60"></script>
+  <!-- App Entry -->
+  <script type="module" src="js/app.js?v=61"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=60')
+        navigator.serviceWorker.register('sw.js?v=61')
           .then(r => console.log('SW registered:', r.scope))
           .catch(e => console.log('SW registration failed:', e));
       });

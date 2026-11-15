@@ -448,31 +448,51 @@ function stripHtmlTags(html) {
     .trim();
 }
 
-function extractEmailText(payload) {
-  const decode = data => {
+function decodeBase64Utf8(data) {
+  try {
+    const bin = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  } catch {
     try { return atob(data.replace(/-/g, '+').replace(/_/g, '/')); } catch { return ''; }
-  };
-  if (payload.body?.data) {
-    const raw = decode(payload.body.data);
-    if (payload.mimeType === 'text/plain') return raw;
-    if (payload.mimeType === 'text/html') return stripHtmlTags(raw);
   }
-  let htmlFallback = '';
-  for (const part of payload.parts || []) {
+}
+
+function extractEmailText(payload) {
+  let plainTexts = [];
+  let htmlTexts = [];
+
+  function walk(part) {
+    if (!part) return;
     if (part.mimeType === 'text/plain' && part.body?.data) {
-      const t = decode(part.body.data);
-      if (t && t.trim().length > 30 && !/view\s+this\s+email\s+in\s+(?:a\s+)?browser|view\s+as\s+web\s*page/i.test(t)) {
-        return t;
-      }
-      if (t) htmlFallback = htmlFallback || t;
+      const decoded = decodeBase64Utf8(part.body.data);
+      if (decoded.trim()) plainTexts.push(decoded.trim());
+    } else if (part.mimeType === 'text/html' && part.body?.data) {
+      const decoded = decodeBase64Utf8(part.body.data);
+      if (decoded.trim()) htmlTexts.push(stripHtmlTags(decoded));
     }
-    if (part.mimeType === 'text/html' && part.body?.data) {
-      htmlFallback = htmlFallback || stripHtmlTags(decode(part.body.data));
+    for (const sub of part.parts || []) {
+      walk(sub);
     }
-    const nested = extractEmailText(part);
-    if (nested) return nested;
   }
-  return htmlFallback;
+
+  walk(payload);
+
+  const plainCombined = plainTexts.join('\n');
+  const htmlCombined = htmlTexts.join('\n');
+
+  const isTxn = t => /(?:debited|spent|paid|deducted|transaction|transferred|₹|â‚¹|Rs\.?|INR)/i.test(t);
+
+  // If plain text has clear transaction details, use it
+  if (plainCombined && isTxn(plainCombined) && plainCombined.length > 35) {
+    return plainCombined;
+  }
+  // Otherwise use stripped HTML which contains all styled text and tables
+  if (htmlCombined && isTxn(htmlCombined)) {
+    return htmlCombined;
+  }
+  return plainCombined || htmlCombined || '';
 }
 
 const MONTH_MAP = {
@@ -513,8 +533,8 @@ function isCreditEmail(text, subject = '') {
   const combined = `${subject} ${text}`;
   const withoutNotCredited = combined.replace(/not\s+credited/gi, '');
   if (/(?:account|a\/c|card)\s+(?:has been|is|was)?\s*credited/i.test(withoutNotCredited)) return true;
-  if (/(?:credited|received)\s+(?:with|by|for)?\s*(?:Rs\.?|INR|₹)/i.test(withoutNotCredited)) return true;
-  if (/(?:Rs\.?|INR|₹)\s*[\d,]+(?:\.\d{1,2})?\s+(?:is|has been|was)?\s*credited/i.test(withoutNotCredited)) return true;
+  if (/(?:credited|received)\s+(?:with|by|for)?\s*(?:Rs\.?|INR|₹|â‚¹)/i.test(withoutNotCredited)) return true;
+  if (/(?:Rs\.?|INR|₹|â‚¹)\s*[\d,]+(?:\.\d{1,2})?\s+(?:is|has been|was)?\s*credited/i.test(withoutNotCredited)) return true;
   return false;
 }
 
@@ -581,22 +601,24 @@ function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from = '')
   // 2. Identify Bank
   const bank = detectBank(from, subject, body);
 
-  // Strip balance / credit limit amounts so they are never parsed as expense amounts
-  const cleanBody = body.replace(/(?:available\s+balance|avl\s+bal|ledger\s+balance|total\s+balance|credit\s+limit|avl\s+limit|available\s+limit).*?(?:Rs\.?|INR|₹)\s*[\d,]+(?:\.\d{1,2})?/gi, '');
+  // Strip balance / credit limit amounts without greedily swallowing text
+  const cleanBody = body.replace(/(?:available\s+balance|avl\s+bal|ledger\s+balance|total\s+balance|credit\s+limit|avl\s+limit|available\s+limit)[^.,\n]{0,35}?(?:Rs\.?|INR|₹|â‚¹)\s*[\d,]+(?:\.\d{1,2})?/gi, '');
+
+  const CURR = '(?:Rs\\.?|INR|₹|â‚¹)';
 
   // 3. Extract Amount
   let amount = null;
   const amtPatterns = [
-    /(?:debited\s+(?:by|for|with)|is\s+debited|has\s+been\s+debited|was\s+debited|debited\s+from.*?for)\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i,
-    /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)\s+(?:is|has been|was)?\s*debited/i,
-    /(?:spent|transaction\s+(?:of|for)|payment\s+(?:of|for)|purchase\s+(?:of|for))\s+(?:(?:an\s+amount\s+of\s+)?(?:Rs\.?|INR|₹))?\s*([\d,]+(?:\.\d{1,2})?)/i,
-    /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)\s+(?:spent|was spent|deducted)/i,
-    /(?:debited|deducted|transferred|paid)\s+(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    /(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)/i
+    new RegExp(`(?:debited\\s+(?:by|for|with)|is\\s+debited|has\\s+been\\s+debited|was\\s+debited|debited\\s+from.*?for)\\s*${CURR}?\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i'),
+    new RegExp(`${CURR}\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s+(?:is|has\\s+been|was)?\\s*debited`, 'i'),
+    new RegExp(`(?:spent|transaction\\s+(?:of|for)|payment\\s+(?:of|for)|purchase\\s+(?:of|for))\\s+(?:(?:an\\s+amount\\s+of\\s+)?${CURR})?\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i'),
+    new RegExp(`${CURR}\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s+(?:spent|was\\s+spent|deducted)`, 'i'),
+    new RegExp(`(?:debited|deducted|transferred|paid)\\s+${CURR}\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i'),
+    new RegExp(`${CURR}\\s*([\\d,]+(?:\\.\\d{1,2})?)`, 'i')
   ];
 
-  const hasSpendIntent = /(?:debited|deducted|spent|paid|transferred to|transfer to|payment of|transaction of|purchase at)/i.test(body) ||
-                         /(?:debited|spent|paid|deducted)/i.test(subject);
+  const hasSpendIntent = /(?:debited|deducted|spent|paid|transferred|transfer|payment|transaction|purchase)/i.test(body) ||
+                         /(?:debited|spent|paid|deducted|alert|update)/i.test(subject);
   if (!hasSpendIntent) return null;
 
   for (const p of amtPatterns) {
@@ -807,7 +829,7 @@ async function gmailDoSync(silent = false) {
     const startDate = await db.getSetting('gmail_start_date', '2026-10-07');
     await db.setSetting('gmail_last_sync', null); // clear stale value so it never interferes
     const afterStr = startDate.replace(/-/g, '/');
-    const query = `(debited OR spent OR deducted OR "payment of" OR "paid to" OR "transferred to" OR "transaction of" OR "debit alert") (Rs OR INR OR "₹") after:${afterStr}`;
+    const query = `{from:hdfc from:sbi from:icici from:unionbank from:slice from:axis from:kotak debited spent deducted "debit alert" "transaction alert" "paid to" "transferred to"} after:${afterStr}`;
 
     // Fetch all pages
     const allMessages = [];
@@ -855,23 +877,24 @@ async function gmailDoSync(silent = false) {
       const dateStr = new Date(emailDate).toISOString().slice(0, 10);
 
       const text = extractEmailText(msgData.payload || {});
+      const emailBank = detectBank(from, subject, text);
 
       // Skip credits
       if (isCreditEmail(text, subject)) {
-        rows.push({ date: dateStr, subject, status: 'credit' });
+        rows.push({ date: dateStr, subject, status: 'credit', bank: emailBank });
         continue;
       }
 
       const result = parseBankEmail(text, emailDate, subject, from);
 
       if (!result) {
-        rows.push({ date: dateStr, subject, status: 'failed', snippet: text.slice(0, 150) });
+        rows.push({ date: dateStr, subject, status: 'failed', snippet: text.slice(0, 150), bank: emailBank });
         continue;
       }
 
       // Skip before start date
       if (result.date < startDate) {
-        rows.push({ date: dateStr, subject, status: 'before_start' });
+        rows.push({ date: dateStr, subject, status: 'before_start', bank: result.bank });
         continue;
       }
 
@@ -880,7 +903,7 @@ async function gmailDoSync(silent = false) {
       result._dupeKey = dupeKey;
 
       if (importedSet.has(dupeKey) || (result.refNo && importedSet.has(result.refNo))) {
-        rows.push({ date: result.date, subject, status: 'dupe' });
+        rows.push({ date: result.date, subject, status: 'dupe', bank: result.bank });
         continue;
       }
 
@@ -2742,12 +2765,12 @@ async function renderSettings() {
                       const icons = { imported:'✅', dupe:'⏭️', credit:'⏭️', failed:'❌', pending:'🔄', before_start:'⏭️', skipped_by_user:'⏭️' };
                       const labels = {
                         imported: `Imported [${r.bank||'Bank'}] ₹${r.amount} to ${r.merchant}`,
-                        dupe: 'Skipped: already imported',
-                        credit: 'Skipped: credit transaction',
-                        before_start: 'Skipped: before start date',
+                        dupe: `Skipped [${r.bank||'Bank'}]: already imported`,
+                        credit: `Skipped [${r.bank||'Bank'}]: credit transaction`,
+                        before_start: `Skipped [${r.bank||'Bank'}]: before start date`,
                         skipped_by_user: 'Skipped by you',
                         pending: `Pending [${r.bank||'Bank'}] ₹${r.amount} to ${r.merchant}`,
-                        failed: `FAILED to parse — <code style="font-size:10px;word-break:break-all">${(r.snippet||'').replace(/</g,'&lt;')}</code>`
+                        failed: `FAILED to parse [${r.bank||'Bank'}] — <code style="font-size:10px;word-break:break-all">${(r.snippet||'').replace(/</g,'&lt;')}</code>`
                       };
                       return `<div class="gmail-result-row gmail-result-${r.status}">
                         <span class="gmail-result-icon">${icons[r.status]||'•'}</span>

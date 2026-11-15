@@ -1,10 +1,12 @@
-const CACHE = 'expense-tracker-v56';
+const CACHE = 'expense-tracker-v57';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './css/app.css',
+  './css/app.css?v=57',
   './js/app.js',
+  './js/app.js?v=57',
   './js/db.js',
   './js/categories.js',
   './js/audio.js',
@@ -59,7 +61,7 @@ self.addEventListener('fetch', e => {
 
   // Cache-first for everything else (CSS, JS, images)
   e.respondWith(
-    caches.match(e.request).then(cached => {
+    caches.match(e.request, { ignoreSearch: true }).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
         if (res && res.status === 200) {

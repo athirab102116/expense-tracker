@@ -1054,9 +1054,23 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   vertical-align: middle;
   border: 1px solid transparent;
 }
-.method-upi  { background: rgba(59,130,246,0.12); color: #3b82f6; border-color: rgba(59,130,246,0.2); }
-.method-card { background: rgba(139,92,246,0.12); color: #8b5cf6; border-color: rgba(139,92,246,0.2); }
-.method-cash { background: rgba(34,197,94,0.12);  color: #16a34a; border-color: rgba(34,197,94,0.2); }
+.method-upi      { background: rgba(59,130,246,0.12); color: #3b82f6; border-color: rgba(59,130,246,0.2); }
+.method-card     { background: rgba(139,92,246,0.12); color: #8b5cf6; border-color: rgba(139,92,246,0.2); }
+.method-cash     { background: rgba(34,197,94,0.12);  color: #16a34a; border-color: rgba(34,197,94,0.2); }
+.method-transfer { background: rgba(14,165,233,0.12); color: #0284c7; border-color: rgba(14,165,233,0.25); }
+
+/* ── Transaction Type Badges ── */
+.txn-type-badge {
+  display: inline-block;
+  font-size: 9px; font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.txn-type-debit  { background: rgba(239, 68, 68, 0.12); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.28); }
+.txn-type-credit { background: rgba(34, 197, 94, 0.12); color: #16a34a; border: 1px solid rgba(34, 197, 94, 0.28); }
 
 /* ── Bank pills ── */
 .bank-pill {

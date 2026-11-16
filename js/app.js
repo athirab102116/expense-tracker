@@ -548,17 +548,26 @@ async function getGmailToken() {
 }
 
 function stripHtmlTags(html) {
+  if (!html) return '';
   return html
-    .replace(/<br\s*\/?>/gi, '\n')
+    // Convert block elements and table cells to newlines to preserve key-value layout
+    .replace(/<\/(?:td|th|tr|p|div|li|h[1-6]|table|blockquote)>/gi, '\n')
+    .replace(/<(?:br\s*\/?>|tr\b[^>]*>|p\b[^>]*>|div\b[^>]*>)/gi, '\n')
+    .replace(/<(?:td|th)\b[^>]*>/gi, '\n')
+    // Strip all remaining HTML tags
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    // Decode HTML entities
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/\s+/g, ' ')
-    .trim();
+    // Normalize horizontal whitespace per line and keep meaningful line breaks
+    .split('\n')
+    .map(line => line.replace(/[^\S\r\n]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 function decodeBase64Utf8(data) {
@@ -597,8 +606,13 @@ function extractEmailText(payload) {
 
   const isTxn = t => /(?:debited|spent|paid|deducted|transaction|transferred|₹|â‚¹|Rs\.?|INR)/i.test(t);
 
-  // If plain text has clear transaction details, use it
+  // If plain text has clear transaction details, check if HTML provides richer table line breaks
   if (plainCombined && isTxn(plainCombined) && plainCombined.length > 35) {
+    const plainLines = plainCombined.split('\n').filter(Boolean).length;
+    const htmlLines = htmlCombined.split('\n').filter(Boolean).length;
+    if (htmlLines > plainLines + 2 && isTxn(htmlCombined)) {
+      return htmlCombined;
+    }
     return plainCombined;
   }
   // Otherwise use stripped HTML which contains all styled text and tables
@@ -748,9 +762,10 @@ function isBankName(str, bank = '') {
 }
 
 const MERCHANT_STOPWORDS = new Set([
-  'inform', 'inform you', 'inform you that', 'inform you that rs',
-  'you', 'your', 'your account', 'your a/c', 'account', 'a/c',
-  'bank', 'bank account', 'card', 'credit card', 'debit card',
+  // Explicit blocklist for footer / support / boilerplate terms
+  'help', 'line', 'help line', 'helpline', 'team',
+  'support', 'customer support', 'customer care', 'care',
+  'digital', 'safety', 'tips', 'safety tips', 'security',
   'customer', 'dear customer', 'valuable customer',
   'slice', 'sliceit', 'slice debit', 'slice card',
   'hdfc', 'hdfc bank', 'hdfc debit', 'hdfc credit',
@@ -758,18 +773,33 @@ const MERCHANT_STOPWORDS = new Set([
   'icici', 'icici bank', 'icici debit',
   'union bank', 'union bank of india', 'ubi',
   'axis', 'axis bank', 'kotak', 'idfc', 'canara', 'pnb', 'bob',
-  'upi', 'vpa', 'not', 'our', 'the', 'this', 'that', 'view', 'check',
-  'call', 'contact', 'sms', 'otp', 'ref', 'reference', 'avl', 'bal',
-  'available balance', 'total', 'amount', 'transaction', 'alert', 'update',
-  'online', 'payment', 'successful', 'completed', 'using', 'towards', 'unknown merchant'
+  'indusind', 'federal bank', 'yes bank', 'onecard',
+  'account', 'your account', 'bank account', 'a/c', 'your a/c',
+  'bank',
+  'your', 'the', 'this', 'that', 'our', 'you',
+  'view', 'click', 'download',
+  'card', 'credit card', 'debit card',
+  'upi', 'vpa', 'not', 'check', 'call', 'contact', 'sms', 'otp',
+  'ref', 'reference', 'rrn', 'utr', 'txn', 'transaction', 'alert', 'update',
+  'avl', 'bal', 'available balance', 'total', 'amount',
+  'online', 'payment', 'successful', 'completed', 'using', 'towards',
+  'unknown merchant', 'unknown',
+  'inform', 'inform you', 'inform you that', 'inform you that rs',
+  'queries', 'query', 'grievance', 'report', 'fraud', 'notice',
+  'toll free', 'toll-free', 'tollfree'
 ]);
 
 function stripBoilerplate(text) {
+  if (!text) return '';
   let cleaned = text;
   for (const bp of BOILERPLATE_PATTERNS) {
     cleaned = cleaned.replace(bp, ' ');
   }
-  return cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned
+    .split('\n')
+    .map(line => line.replace(/[^\S\r\n]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 function cleanUpiHandle(handle) {
@@ -804,7 +834,7 @@ function cleanMerchantName(str, bank = '') {
   let cleaned = str
     .replace(/^[@\-_.:\s"'“”‘’]+|[@\-_.:\s"'“”‘’]+$/g, '')
     .replace(/^(?:vpa|to|towards|at|paid\s+to|transfer\s+to|transferred\s+to|sent\s+to|refund\s+from|cashback\s+from|received\s+from)\s+/i, '')
-    .replace(/\s+(?:on\b|using\b|via\b|ref\b|upi\b|date\b).*$/i, '')
+    .replace(/\s+(?:on\b|using\b|via\b|ref\b|upi\b|date\b|rrn\b).*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -821,7 +851,24 @@ function cleanMerchantName(str, bank = '') {
   const lower = cleaned.toLowerCase();
   if (MERCHANT_STOPWORDS.has(lower)) return '';
   if (isBankName(cleaned, bank)) return '';
-  if (/^(?:inform|view|notify|check|call|your|our|the|this|that|please|an?\s+amount)\b/i.test(cleaned)) {
+
+  // Reject boilerplate beginnings / single words
+  if (/^(?:inform|view|notify|check|call|your|our|the\b(?!\s+[A-Za-z]+)|this|that|please|an?\s+amount|know|report|update|dispute)\b/i.test(cleaned)) {
+    return '';
+  }
+
+  // Reject sentences or overly long strings
+  if (cleaned.split(/\s+/).length > 6 || cleaned.length > 40) {
+    return '';
+  }
+
+  // Reject footer / help phrases anywhere in candidate
+  if (/\b(?:help\s*line|helpline|customer\s*care|customer\s*support|safety\s*tips|toll\s*free|need\s*help|click\s*here)\b/i.test(lower)) {
+    return '';
+  }
+
+  // Reject if candidate is just 1 character or purely numbers/symbols
+  if (cleaned.length < 2 || /^[^a-zA-Z]+$/.test(cleaned)) {
     return '';
   }
 
@@ -877,58 +924,97 @@ function extractMerchantFromText(body, strippedBody, bank = '') {
   const vpaBracket = body.match(/VPA\s+\S+\s*\(([^)]+)\)/i);
   if (vpaBracket) {
     const candidate = cleanMerchantName(vpaBracket[1], bank);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
-  // 2. UPI Info line: Info: UPI/12345/Merchant/Bank or Info: UPI/Merchant/12345 or towards UPI/12345/Merchant
+  // 2. Table / Standalone "To" / "Payee" key-value layout (Slice, HDFC, bank alerts)
+  // Matches "To\nSWIGGY" or "To: SWIGGY" or "To   SWIGGY" up to newline or RRN / Ref
+  const tableToMatch = text.match(/\bTo\b\s*:?\s*\n+\s*([^\n\r]+)/i) ||
+                       body.match(/\bTo\b\s*:?\s*\n+\s*([^\n\r]+)/i) ||
+                       text.match(/^\s*To\b\s*:?\s*([^\n\r]+)/im) ||
+                       body.match(/^\s*To\b\s*:?\s*([^\n\r]+)/im) ||
+                       body.match(/\bTo\b\s{2,}([^\n\r]+)/i);
+  if (tableToMatch && tableToMatch[1]) {
+    let raw = tableToMatch[1].split(/\b(?:RRN|Ref|UTR|Txn|Date)\b/i)[0].trim();
+    const candidate = cleanMerchantName(raw, bank);
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+
+  // Other table labels: Payee, Beneficiary Name, Merchant
+  const tablePayeeMatch = text.match(/\b(?:Payee|Beneficiary(?:\s+Name)?|Merchant(?:\s+Name)?)\b\s*:?\s*(?:\n+|\s{2,}|\s*:?\s*)([^\n\r]+)/i) ||
+                          body.match(/\b(?:Payee|Beneficiary(?:\s+Name)?|Merchant(?:\s+Name)?)\b\s*:?\s*(?:\n+|\s{2,}|\s*:?\s*)([^\n\r]+)/i);
+  if (tablePayeeMatch && tablePayeeMatch[1]) {
+    let raw = tablePayeeMatch[1].split(/\b(?:RRN|Ref|UTR|Txn|Date|Account|A\/c)\b/i)[0].trim();
+    const candidate = cleanMerchantName(raw, bank);
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+
+  // 3. HDFC / Bank VPA Payee extraction:
+  // "to VPA <upi-id> <Merchant Name> on <date>" OR "to VPA <upi-id> (<Merchant Name>) on <date>"
+  const toVpaWithName = body.match(/(?:to|towards|transfer\s+to|transferred\s+to|by\s+transfer\s+to)\s+VPA\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)(?:\s*\(([^)]+)\)|\s+([A-Za-z0-9 &.'\-]{2,40}?))?(?:\s+on\b|\s+using\b|\s+via\b|\s+Ref\b|\s+UPI\b|\.|\n|$)/i);
+  if (toVpaWithName) {
+    const vpaHandle = toVpaWithName[1];
+    const bracketName = toVpaWithName[2];
+    const trailingName = toVpaWithName[3];
+
+    if (bracketName) {
+      const c = cleanMerchantName(bracketName, bank);
+      if (c && !isBankName(c, bank) && !MERCHANT_STOPWORDS.has(c.toLowerCase())) return c;
+    }
+    if (trailingName && !/^(?:on|using|via|ref|upi|date)\b/i.test(trailingName.trim())) {
+      const c = cleanMerchantName(trailingName, bank);
+      if (c && !isBankName(c, bank) && !MERCHANT_STOPWORDS.has(c.toLowerCase())) return c;
+    }
+    const c = cleanUpiHandle(vpaHandle);
+    if (c && !isBankName(c, bank) && !MERCHANT_STOPWORDS.has(c.toLowerCase())) return c;
+  }
+
+  // 4. UPI Info line: Info: UPI/12345/Merchant/Bank or Info: UPI/Merchant/12345 or towards UPI/12345/Merchant
   const infoMatch = body.match(/(?:Info:\s*|towards\s+)?UPI\/(?:\d+\/)?([A-Za-z0-9 &._\-]+?)(?:\/|$|\s)/i);
   if (infoMatch && infoMatch[1] && !/^\d+$/.test(infoMatch[1])) {
     const candidate = cleanMerchantName(infoMatch[1], bank);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
-  // 3. "to VPA <upi-id>", "towards VPA <upi-id>", "by transfer to VPA <upi-id>", "transfer to VPA <upi-id>"
-  const toVpaMatch = body.match(/(?:to|towards|transfer\s+to|transferred\s+to|by\s+transfer\s+to)\s+VPA\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)/i);
-  if (toVpaMatch) {
-    const candidate = cleanUpiHandle(toVpaMatch[1]);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
-  }
-
-  // 4. "payment [of Rs X] to <Merchant>" / "payment to <Merchant> of Rs X was successful"
+  // 5. "payment [of Rs X] to <Merchant>" / "payment to <Merchant> of Rs X was successful"
   const paymentToMatch = text.match(/payment\s+(?:of\s+[^.]+?\s+)?to\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:was\s+successful|successful|completed|of\b|using\b|on\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
   if (paymentToMatch) {
     const candidate = cleanMerchantName(paymentToMatch[1], bank);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
-  // 5. Refunds / cashbacks / credits: "refund [of Rs X] from <Merchant>" / "received [Rs X] from <Merchant>"
+  // 6. Refunds / cashbacks / credits: "refund [of Rs X] from <Merchant>" / "received [Rs X] from <Merchant>"
   const refundMatch = text.match(/(?:refund|cashback|received|money\s+received)\s+(?:of\s+)?(?:(?:an?\s+)?amount\s+(?:of\s+)?)?(?:(?:Rs\.?|INR|₹|â‚¹)\s*[\d,]+(?:\.\d{1,2})?\s+)?from\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:was\s+credited|credited|received|on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i) ||
                       text.match(/(?:refund|cashback|received)\s+from\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:was\s+credited|credited|received|on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
   if (refundMatch) {
     const candidate = cleanMerchantName(refundMatch[1], bank);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
-  // 6. Action patterns: "paid [Rs X] to <Merchant>", "transferred [Rs X] to <Merchant>", "sent [Rs X] to <Merchant>", "transfer to <Merchant>", "towards <Merchant>"
+  // 7. Action patterns: "paid [Rs X] to <Merchant>", "transferred [Rs X] to <Merchant>", "sent [Rs X] to <Merchant>", "transfer to <Merchant>", "towards <Merchant>"
   const actionMatch = text.match(/(?:paid|transferred|transfer|sent)\s+(?:(?:an?\s+)?amount\s+(?:of\s+)?|(?:Rs\.?|INR|₹|â‚¹)\s*[\d,]+(?:\.\d{1,2})?\s+)?to\s+(?:VPA\s+)?([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i) ||
                       text.match(/(?:towards|paid\s+to|transfer\s+to|transferred\s+to|sent\s+to)\s+(?:VPA\s+)?([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
   if (actionMatch) {
     const candidate = cleanMerchantName(actionMatch[1], bank);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
-  // 7. "at <Merchant> using slice" or "at <Merchant> on..."
+  // 8. "at <Merchant> using slice" or "at <Merchant> on..."
   const atMatch = text.match(/\bat\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:using\b|on\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
   if (atMatch) {
     const candidate = cleanMerchantName(atMatch[1], bank);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
-  // 8. Bare VPA handle anywhere: e.g. swiggyupi@axisbank or VPA rahul@okaxis
+  // 9. Bare VPA handle anywhere: e.g. swiggyupi@axisbank or VPA rahul@okaxis
   const bareVpa = body.match(/\b([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)\b/i);
   if (bareVpa) {
     const candidate = cleanUpiHandle(bareVpa[1]);
-    if (candidate && !isBankName(candidate, bank)) return candidate;
+    if (candidate && !isBankName(candidate, bank) && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
   }
 
   return /atm|cash withdrawal/i.test(body) ? `${bank || 'Bank'} ATM` : 'Unknown Merchant';
@@ -1005,9 +1091,11 @@ Schema:
 
 CRITICAL RULES FOR MERCHANT:
 1. NEVER return bank names (e.g., 'HDFC', 'SBI', 'Slice', 'ICICI', 'Union Bank', 'Axis Bank') as the merchant.
-2. If this is a payment, extract the actual payee/merchant (e.g., from 'paid to <Merchant>', 'transferred to <Merchant>', 'sent to <Merchant>', 'towards <Merchant>', 'at <Merchant>', or 'to VPA <upi-id>').
-3. If only a UPI ID / VPA is present (such as swiggyupi@axisbank or zappo.store@okicici), clean it to human readable form (e.g., 'Swiggy', 'Zappo Store').
-4. If a transfer time is mentioned in the email body, extract it (e.g., '10:42 AM', '20:15:30', '08:44 PM').
+2. NEVER return boilerplate words, email footer text, or helpline phrases (e.g., 'Help', 'Line', 'Help Line', 'Helpline', 'Customer Support', 'Customer Care', 'Safety Tips', 'Team', 'Support', 'Digital').
+3. In Slice or bank alerts with multi-line or table key-value pairs (e.g., 'To\\nSWIGGY\\nRRN' or 'To: SWIGGY'), extract the actual payee name following 'To' or 'Payee' (e.g., 'Swiggy').
+4. If this is a payment, extract the actual payee/merchant (e.g., from 'paid to <Merchant>', 'transferred to <Merchant>', 'sent to <Merchant>', 'towards <Merchant>', 'at <Merchant>', 'to VPA <upi-id>', or 'To: <Merchant>').
+5. If only a UPI ID / VPA is present (such as swiggyupi@axisbank or zappo.store@okicici), clean it to human readable form (e.g., 'Swiggy', 'Zappo Store').
+6. If a transfer time is mentioned in the email body, extract it (e.g., '10:42 AM', '20:15:30', '08:44 PM').
 
 Email Subject: ${subject}
 Email Content:
@@ -1101,14 +1189,17 @@ async function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from
   }
 
   // 8. LLM Fallback (if Gemini key configured and merchant is unknown or needs refinement)
-  if (geminiApiKey && merchant === 'Unknown Merchant') {
+  if (geminiApiKey && (merchant === 'Unknown Merchant' || MERCHANT_STOPWORDS.has(merchant.toLowerCase()))) {
     const llm = await callGeminiParse(body, subject, geminiApiKey);
-    if (llm && llm.merchant && !MERCHANT_STOPWORDS.has(llm.merchant.toLowerCase()) && !isBankName(llm.merchant, bank)) {
-      merchant = cleanMerchantName(llm.merchant, bank) || merchant;
-      if (llm.type) type = llm.type;
-      if (llm.method) method = llm.method;
-      if (llm.refNo && !refNo) refNo = llm.refNo;
-      if (llm.time) time = normalizeTime(llm.time, emailDateMs) || time;
+    if (llm && llm.merchant) {
+      const cleanedLlm = cleanMerchantName(llm.merchant, bank);
+      if (cleanedLlm && !MERCHANT_STOPWORDS.has(cleanedLlm.toLowerCase()) && !isBankName(cleanedLlm, bank)) {
+        merchant = cleanedLlm;
+        if (llm.type) type = llm.type;
+        if (llm.method) method = llm.method;
+        if (llm.refNo && !refNo) refNo = llm.refNo;
+        if (llm.time) time = normalizeTime(llm.time, emailDateMs) || time;
+      }
     }
   }
 

@@ -613,9 +613,103 @@ const MONTH_MAP = {
   jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
 };
 
+function formatTimeIST(dateObjOrMs) {
+  try {
+    const d = new Date(dateObjOrMs);
+    if (isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(d).toUpperCase();
+  } catch (_) {
+    return '';
+  }
+}
+
+function normalizeTime(rawTime, fallbackDateMs) {
+  if (rawTime) {
+    const str = String(rawTime).trim();
+    // 1. Matches 12-hour: "10:42 AM", "8:44pm", "08:44:15 PM"
+    const m12 = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])/);
+    if (m12) {
+      let hh = parseInt(m12[1], 10);
+      const mm = m12[2];
+      const meridiem = m12[3].toUpperCase();
+      if (hh > 12) hh = hh % 12;
+      return `${String(hh).padStart(2, '0')}:${mm} ${meridiem}`;
+    }
+    // 2. Matches 24-hour: "20:15:30", "14:22", "09:05:00"
+    const m24 = str.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/);
+    if (m24) {
+      const h24 = parseInt(m24[1], 10);
+      const mm = m24[2];
+      const meridiem = h24 >= 12 ? 'PM' : 'AM';
+      let h12 = h24 % 12;
+      if (h12 === 0) h12 = 12;
+      return `${String(h12).padStart(2, '0')}:${mm} ${meridiem}`;
+    }
+  }
+
+  // Fallback to internal timestamp converted to IST (Asia/Kolkata)
+  if (fallbackDateMs) {
+    return formatTimeIST(fallbackDateMs);
+  }
+  return '';
+}
+
+function extractTimeFromText(body, fallbackDateMs) {
+  if (!body) return fallbackDateMs ? formatTimeIST(fallbackDateMs) : '';
+
+  // 1. "at 10:42 AM", "at 20:15:30", "at 08:44 PM"
+  const atTime = body.match(/\bat\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp][Mm])?)\b/);
+  if (atTime) {
+    const t = normalizeTime(atTime[1], null);
+    if (t) return t;
+  }
+
+  // 2. Date followed by time: "16-11-2026 20:15:30", "16-Nov-26 14:22:10", "16/11/2026 15:30:10"
+  const dateTime = body.match(/\b\d{1,2}[-/ ][A-Za-z0-9]{3,}[-/ ]\d{2,4}\s+(?:at\s+)?(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp][Mm])?)\b/);
+  if (dateTime) {
+    const t = normalizeTime(dateTime[1], null);
+    if (t) return t;
+  }
+
+  // 3. "time: 14:22", "time : 08:44 PM"
+  const timeLabel = body.match(/\btime\s*:?\s*(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp][Mm])?)\b/i);
+  if (timeLabel) {
+    const t = normalizeTime(timeLabel[1], null);
+    if (t) return t;
+  }
+
+  // 4. Any 12-hour time: "10:42 AM", "08:44 PM"
+  const any12 = body.match(/\b(\d{1,2}:\d{2}(?::\d{2})?\s*[AaPp][Mm])\b/);
+  if (any12) {
+    const t = normalizeTime(any12[1], null);
+    if (t) return t;
+  }
+
+  // 5. Any 24-hour time with seconds: "20:15:30"
+  const any24Sec = body.match(/\b([01]?\d|2[0-3]):([0-5]\d):([0-5]\d)\b/);
+  if (any24Sec) {
+    const t = normalizeTime(any24Sec[0], null);
+    if (t) return t;
+  }
+
+  // Fallback to internalDate in IST (Asia/Kolkata)
+  return fallbackDateMs ? formatTimeIST(fallbackDateMs) : '';
+}
+
 function normalizeDate(rawDate, fallbackDateMs) {
   if (!rawDate) {
-    return new Date(fallbackDateMs || Date.now()).toISOString().slice(0, 10);
+    if (fallbackDateMs) {
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(fallbackDateMs));
+      } catch (_) {}
+      return new Date(fallbackDateMs).toISOString().slice(0, 10);
+    }
+    return new Date().toISOString().slice(0, 10);
   }
   let m = rawDate.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
   if (m) {
@@ -630,7 +724,9 @@ function normalizeDate(rawDate, fallbackDateMs) {
     const year = yy.length <= 2 ? '20' + yy.padStart(2, '0') : yy;
     return `${year}-${mm}-${dd.padStart(2, '0')}`;
   }
-  return new Date(fallbackDateMs || Date.now()).toISOString().slice(0, 10);
+  return fallbackDateMs
+    ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(fallbackDateMs))
+    : new Date().toISOString().slice(0, 10);
 }
 
 const BOILERPLATE_PATTERNS = [
@@ -644,11 +740,24 @@ const BOILERPLATE_PATTERNS = [
   /never\s+share\s+your\s+(?:otp|password|pin|cvv)/gi,
 ];
 
+function isBankName(str, bank = '') {
+  if (!str) return false;
+  const s = String(str).toLowerCase().trim();
+  if (bank && s === String(bank).toLowerCase().trim()) return true;
+  return /^(?:hdfc|hdfc\s+bank|sbi|sbicard|state\s+bank|state\s+bank\s+of\s+india|slice|sliceit|icici|icici\s+bank|union\s+bank|union\s+bank\s+of\s+india|ubi|axis|axis\s+bank|kotak|kotak\s+mahindra|idfc|idfc\s+first|canara|canara\s+bank|pnb|punjab\s+national\s+bank|bob|bank\s+of\s+baroda|indusind|federal\s+bank|yes\s+bank|onecard|bank|bank\s+account|credit\s+card|debit\s+card)\b/i.test(s);
+}
+
 const MERCHANT_STOPWORDS = new Set([
   'inform', 'inform you', 'inform you that', 'inform you that rs',
   'you', 'your', 'your account', 'your a/c', 'account', 'a/c',
   'bank', 'bank account', 'card', 'credit card', 'debit card',
-  'customer', 'dear customer', 'slice', 'slice debit', 'hdfc debit', 'sbi debit',
+  'customer', 'dear customer', 'valuable customer',
+  'slice', 'sliceit', 'slice debit', 'slice card',
+  'hdfc', 'hdfc bank', 'hdfc debit', 'hdfc credit',
+  'sbi', 'sbi card', 'sbi debit', 'sbi upi', 'state bank of india',
+  'icici', 'icici bank', 'icici debit',
+  'union bank', 'union bank of india', 'ubi',
+  'axis', 'axis bank', 'kotak', 'idfc', 'canara', 'pnb', 'bob',
   'upi', 'vpa', 'not', 'our', 'the', 'this', 'that', 'view', 'check',
   'call', 'contact', 'sms', 'otp', 'ref', 'reference', 'avl', 'bal',
   'available balance', 'total', 'amount', 'transaction', 'alert', 'update',
@@ -665,22 +774,37 @@ function stripBoilerplate(text) {
 
 function cleanUpiHandle(handle) {
   if (!handle) return '';
-  let name = handle.split('@')[0];
+  let name = String(handle).trim().replace(/^vpa\s*:?\s*/i, '');
+  if (name.includes('@')) name = name.split('@')[0];
+  // Strip gateway prefixes: rzp., razorpay., cashfree., billdesk.
+  name = name.replace(/^(?:rzp|razorpay|cashfree|billdesk)[._\-]/i, '');
+  // Strip trailing numbers attached with separators
   name = name.replace(/[-_.][0-9]+$/g, '');
-  name = name.replace(/[0-9]+$/g, '');
-  name = name.replace(/[._\-]/g, ' ').trim();
-  return name.split(' ')
-    .filter(w => w.length > 0 && !/^(rzp|paytm|qr|vpa|upi)$/i.test(w))
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
+  // If not purely a phone number / digits, strip trailing digits: rahul12345 -> rahul
+  if (!/^\d+$/.test(name)) {
+    name = name.replace(/\d+$/g, '');
+  }
+  // Strip payment suffixes like swiggyupi -> swiggy, zomato_pay -> zomato
+  name = name.replace(/^([a-zA-Z]{3,})(?:upi|pay|merchant|razorpay|rzp|cashfree|bharatpe|phonepe|gpay|paytm)$/i, '$1');
+  // Replace separators with space
+  name = name.replace(/[._\-+]/g, ' ').trim();
+
+  const words = name.split(/\s+/).filter(Boolean);
+  const filtered = words.filter(w => !/^(rzp|pay|merchant|pos|mpos|qr|vpa|upi|razorpay|cashfree|bharatpe|gpay|phonepe|billdesk|ccavenue|direct|pg)$/i.test(w));
+  const finalWords = filtered.length > 0 ? filtered : words;
+
+  if (finalWords.length === 1 && /^\d{10}$/.test(finalWords[0])) {
+    return 'UPI · ' + finalWords[0];
+  }
+  return finalWords.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 
-function cleanMerchantName(str) {
+function cleanMerchantName(str, bank = '') {
   if (!str) return '';
   let cleaned = str
     .replace(/^[@\-_.:\s"'“”‘’]+|[@\-_.:\s"'“”‘’]+$/g, '')
-    .replace(/^(?:vpa|to|towards|at|paid\s+to|transfer\s+to|sent\s+to|refund\s+from|cashback\s+from|received\s+from)\s+/i, '')
-    .replace(/\s+(?:on|using|via|ref|upi|date)\b.*$/i, '')
+    .replace(/^(?:vpa|to|towards|at|paid\s+to|transfer\s+to|transferred\s+to|sent\s+to|refund\s+from|cashback\s+from|received\s+from)\s+/i, '')
+    .replace(/\s+(?:on\b|using\b|via\b|ref\b|upi\b|date\b).*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -696,6 +820,7 @@ function cleanMerchantName(str) {
 
   const lower = cleaned.toLowerCase();
   if (MERCHANT_STOPWORDS.has(lower)) return '';
+  if (isBankName(cleaned, bank)) return '';
   if (/^(?:inform|view|notify|check|call|your|our|the|this|that|please|an?\s+amount)\b/i.test(cleaned)) {
     return '';
   }
@@ -746,56 +871,67 @@ function detectPaymentMethod(body, bank = '') {
 }
 
 function extractMerchantFromText(body, strippedBody, bank = '') {
-  // 1. Bracket inside VPA: VPA handle (Merchant Name)
+  const text = strippedBody || body;
+
+  // 1. Bracket inside VPA: to VPA swiggyupi@axisbank (Swiggy)
   const vpaBracket = body.match(/VPA\s+\S+\s*\(([^)]+)\)/i);
   if (vpaBracket) {
-    const candidate = cleanMerchantName(vpaBracket[1]);
-    if (candidate) return candidate;
+    const candidate = cleanMerchantName(vpaBracket[1], bank);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  // 2. UPI Info line: Info: UPI/12345/Merchant/Bank or towards UPI/12345/Merchant
-  const infoMatch = body.match(/(?:Info:\s*|towards\s+)?UPI\/\d+\/([^\/]+)(?:\/|$)/i);
-  if (infoMatch) {
-    const candidate = cleanMerchantName(infoMatch[1]);
-    if (candidate) return candidate;
+  // 2. UPI Info line: Info: UPI/12345/Merchant/Bank or Info: UPI/Merchant/12345 or towards UPI/12345/Merchant
+  const infoMatch = body.match(/(?:Info:\s*|towards\s+)?UPI\/(?:\d+\/)?([A-Za-z0-9 &._\-]+?)(?:\/|$|\s)/i);
+  if (infoMatch && infoMatch[1] && !/^\d+$/.test(infoMatch[1])) {
+    const candidate = cleanMerchantName(infoMatch[1], bank);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  // 3. Payment of Rs X to <Merchant> was successful / completed
-  const paySuccessMatch = strippedBody.match(/payment\s+of\s+[^.]+?\bto\s+([A-Za-z0-9 &.'\-@]{2,50}?)\s+(?:was\s+successful|successful|completed)/i);
-  if (paySuccessMatch) {
-    const candidate = cleanMerchantName(paySuccessMatch[1]);
-    if (candidate) return candidate;
+  // 3. "to VPA <upi-id>", "towards VPA <upi-id>", "by transfer to VPA <upi-id>", "transfer to VPA <upi-id>"
+  const toVpaMatch = body.match(/(?:to|towards|transfer\s+to|transferred\s+to|by\s+transfer\s+to)\s+VPA\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)/i);
+  if (toVpaMatch) {
+    const candidate = cleanUpiHandle(toVpaMatch[1]);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  // 4. "at <Merchant> using slice" or "at <Merchant> on..."
-  const atMatch = strippedBody.match(/\bat\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+using|\s+on\b|\s+via|\.\s+|\n|$|Rs|INR|₹)/i);
-  if (atMatch) {
-    const candidate = cleanMerchantName(atMatch[1]);
-    if (candidate) return candidate;
+  // 4. "payment [of Rs X] to <Merchant>" / "payment to <Merchant> of Rs X was successful"
+  const paymentToMatch = text.match(/payment\s+(?:of\s+[^.]+?\s+)?to\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:was\s+successful|successful|completed|of\b|using\b|on\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
+  if (paymentToMatch) {
+    const candidate = cleanMerchantName(paymentToMatch[1], bank);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  // 5. For refunds / cashback / credits: "refund from <Merchant>" / "received from <Merchant>" / "towards refund from <Merchant>"
-  const refundMatch = strippedBody.match(/(?:towards\s+)?(?:refund\s+from|received\s+from|cashback\s+(?:of|from))\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+Ref|\s+UPI|\s+on\b|\s+via|\.\s+|\n|$)/i);
+  // 5. Refunds / cashbacks / credits: "refund [of Rs X] from <Merchant>" / "received [Rs X] from <Merchant>"
+  const refundMatch = text.match(/(?:refund|cashback|received|money\s+received)\s+(?:of\s+)?(?:(?:an?\s+)?amount\s+(?:of\s+)?)?(?:(?:Rs\.?|INR|₹|â‚¹)\s*[\d,]+(?:\.\d{1,2})?\s+)?from\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:was\s+credited|credited|received|on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i) ||
+                      text.match(/(?:refund|cashback|received)\s+from\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:was\s+credited|credited|received|on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
   if (refundMatch) {
-    const candidate = cleanMerchantName(refundMatch[1]);
-    if (candidate) return candidate;
+    const candidate = cleanMerchantName(refundMatch[1], bank);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  // 6. "paid to <Merchant>" / "transfer to <Merchant>" / "towards <Merchant>" / "sent to <Merchant>" / "NEFT to <Merchant>"
-  const actionMatch = strippedBody.match(/(?:paid\s+to|transfer\s+to|transferred\s+to|sent\s+to|towards|(?:NEFT|IMPS|RTGS|funds?\s+transfer)\s+(?:(?:transfer|payment)\s+)?to)\s+(?:VPA\s+)?([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+Ref|\s+UPI|\s+UTR|\s+on\b|\s+using|\s+via|\.\s+|\n|$|Rs|INR|₹)/i);
+  // 6. Action patterns: "paid [Rs X] to <Merchant>", "transferred [Rs X] to <Merchant>", "sent [Rs X] to <Merchant>", "transfer to <Merchant>", "towards <Merchant>"
+  const actionMatch = text.match(/(?:paid|transferred|transfer|sent)\s+(?:(?:an?\s+)?amount\s+(?:of\s+)?|(?:Rs\.?|INR|₹|â‚¹)\s*[\d,]+(?:\.\d{1,2})?\s+)?to\s+(?:VPA\s+)?([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i) ||
+                      text.match(/(?:towards|paid\s+to|transfer\s+to|transferred\s+to|sent\s+to)\s+(?:VPA\s+)?([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:on\b|using\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
   if (actionMatch) {
-    const candidate = cleanMerchantName(actionMatch[1]);
-    if (candidate) return candidate;
+    const candidate = cleanMerchantName(actionMatch[1], bank);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  // 7. Bare VPA handle: VPA merchant@upi
-  const vpaBare = body.match(/VPA\s+([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)/i);
-  if (vpaBare) {
-    const candidate = cleanUpiHandle(vpaBare[1]);
-    if (candidate && !MERCHANT_STOPWORDS.has(candidate.toLowerCase())) return candidate;
+  // 7. "at <Merchant> using slice" or "at <Merchant> on..."
+  const atMatch = text.match(/\bat\s+([A-Za-z0-9 &.'\-@]{2,50}?)(?:\s+(?:using\b|on\b|via\b|Ref\b|UPI\b|UTR\b|\.|\n|$|Rs\.?|INR|₹))/i);
+  if (atMatch) {
+    const candidate = cleanMerchantName(atMatch[1], bank);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
   }
 
-  return /atm|cash withdrawal/i.test(body) ? `${bank} ATM` : 'Unknown Merchant';
+  // 8. Bare VPA handle anywhere: e.g. swiggyupi@axisbank or VPA rahul@okaxis
+  const bareVpa = body.match(/\b([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)\b/i);
+  if (bareVpa) {
+    const candidate = cleanUpiHandle(bareVpa[1]);
+    if (candidate && !isBankName(candidate, bank)) return candidate;
+  }
+
+  return /atm|cash withdrawal/i.test(body) ? `${bank || 'Bank'} ATM` : 'Unknown Merchant';
 }
 
 function detectBank(from = '', subject = '', body = '') {
@@ -854,17 +990,24 @@ function detectBank(from = '', subject = '', body = '') {
 
 async function callGeminiParse(emailBody, subject = '', apiKey) {
   if (!apiKey || !apiKey.trim()) return null;
-  const prompt = `You are a financial transaction extractor for Indian bank and payment alert emails.
+  const prompt = `You are a financial transaction extractor for Indian bank and payment alert emails (e.g. HDFC, SBI, Slice, ICICI, Union Bank, Axis, UPI).
 Extract transaction details from this email alert. Return ONLY valid JSON with no markdown formatting.
 Schema:
 {
   "amount": <number>,
   "type": "debit" | "credit",
   "method": "UPI" | "Card" | "Transfer" | "Cash",
-  "merchant": "<clean merchant, store, person, or organization name>",
+  "merchant": "<clean merchant, store, recipient person, or organization name>",
   "refNo": "<transaction reference or UTR or null>",
-  "date": "YYYY-MM-DD or null"
+  "date": "YYYY-MM-DD or null",
+  "time": "HH:MM AM/PM or null"
 }
+
+CRITICAL RULES FOR MERCHANT:
+1. NEVER return bank names (e.g., 'HDFC', 'SBI', 'Slice', 'ICICI', 'Union Bank', 'Axis Bank') as the merchant.
+2. If this is a payment, extract the actual payee/merchant (e.g., from 'paid to <Merchant>', 'transferred to <Merchant>', 'sent to <Merchant>', 'towards <Merchant>', 'at <Merchant>', or 'to VPA <upi-id>').
+3. If only a UPI ID / VPA is present (such as swiggyupi@axisbank or zappo.store@okicici), clean it to human readable form (e.g., 'Swiggy', 'Zappo Store').
+4. If a transfer time is mentioned in the email body, extract it (e.g., '10:42 AM', '20:15:30', '08:44 PM').
 
 Email Subject: ${subject}
 Email Content:
@@ -894,11 +1037,11 @@ async function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from
   if (!body) return null;
 
   // 1. Transaction Direction
-  const type = classifyTransactionDirection(body, subject);
+  let type = classifyTransactionDirection(body, subject);
 
   // 2. Identify Bank & Method
   const bank = detectBank(from, subject, body);
-  const method = detectPaymentMethod(body, bank);
+  let method = detectPaymentMethod(body, bank);
 
   // 3. Strip Boilerplate & Available Balances
   const strippedBody = stripBoilerplate(body);
@@ -934,11 +1077,13 @@ async function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from
   // 5. Extract Merchant
   let merchant = extractMerchantFromText(body, strippedBody, bank);
 
-  // 6. Extract Date
+  // 6. Extract Date & Time
   let date = null;
   const dateMatch = body.match(/\bon\s+(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[- ][A-Za-z]{3}[- ]\d{2,4})/i) ||
                     body.match(/\bdate\s*:?\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[- ][A-Za-z]{3}[- ]\d{2,4})/i);
   date = normalizeDate(dateMatch ? dateMatch[1] : null, emailDateMs);
+
+  let time = extractTimeFromText(body, emailDateMs);
 
   // 7. Extract Reference Number
   let refNo = null;
@@ -958,15 +1103,16 @@ async function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from
   // 8. LLM Fallback (if Gemini key configured and merchant is unknown or needs refinement)
   if (geminiApiKey && merchant === 'Unknown Merchant') {
     const llm = await callGeminiParse(body, subject, geminiApiKey);
-    if (llm && llm.merchant && !MERCHANT_STOPWORDS.has(llm.merchant.toLowerCase())) {
-      merchant = cleanMerchantName(llm.merchant) || merchant;
+    if (llm && llm.merchant && !MERCHANT_STOPWORDS.has(llm.merchant.toLowerCase()) && !isBankName(llm.merchant, bank)) {
+      merchant = cleanMerchantName(llm.merchant, bank) || merchant;
       if (llm.type) type = llm.type;
       if (llm.method) method = llm.method;
       if (llm.refNo && !refNo) refNo = llm.refNo;
+      if (llm.time) time = normalizeTime(llm.time, emailDateMs) || time;
     }
   }
 
-  return { amount, merchant, date, method, refNo, bank, type };
+  return { amount, merchant, date, time, method, refNo, bank, type };
 }
 
 function parseHdfcEmail(body, emailDateMs) {
@@ -981,15 +1127,31 @@ function showGmailPreview(transactions, importedRefs) {
   <p class="import-hint">${transactions.length} new bank transaction${transactions.length !== 1 ? 's' : ''}. Credits are unchecked by default.</p>
   <div class="import-table-wrap">
     <table class="txn-table import-table">
-      <thead><tr><th>✓</th><th>Date</th><th>Type</th><th>Bank</th><th>Merchant</th><th>Amount</th><th>Category</th><th>Method</th></tr></thead>
+      <thead>
+        <tr>
+          <th style="width:36px;text-align:center">✓</th>
+          <th class="col-datetime" style="min-width:130px">Date & Time</th>
+          <th style="width:90px">Type</th>
+          <th style="width:85px">Bank</th>
+          <th class="col-merchant" style="min-width:200px">Merchant / Payee</th>
+          <th class="col-amount" style="width:110px">Amount</th>
+          <th class="col-cat" style="min-width:140px">Category</th>
+          <th style="width:80px">Method</th>
+        </tr>
+      </thead>
       <tbody>
         ${transactions.map((t, i) => `
           <tr>
-            <td><input type="checkbox" class="gmail-import-check" data-i="${i}" ${t.type === 'credit' ? '' : 'checked'}></td>
-            <td style="white-space:nowrap;font-size:13px;color:var(--text3)">${t.date}</td>
+            <td style="text-align:center"><input type="checkbox" class="gmail-import-check" data-i="${i}" ${t.type === 'credit' ? '' : 'checked'}></td>
+            <td class="col-datetime" style="white-space:nowrap">
+              <div style="font-weight:600;font-size:12.5px;color:var(--text)">${t.date}</div>
+              ${t.time ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${t.time}</div>` : ''}
+            </td>
             <td><span class="txn-type-badge txn-type-${t.type || 'debit'}">${t.type === 'credit' ? '🟢 Credit' : '🔴 Debit'}</span></td>
             <td><span class="bank-pill bank-${(t.bank||'bank').toLowerCase().replace(/\s+/g, '-')}">${t.bank||'Bank'}</span></td>
-            <td><input class="import-cell-input" data-i="${i}" data-f="merchant" value="${(t.merchant||'').replace(/"/g,'&quot;')}"></td>
+            <td class="col-merchant">
+              <input class="import-cell-input import-merchant-input" data-i="${i}" data-f="merchant" value="${(t.merchant||'').replace(/"/g,'&quot;')}" placeholder="Merchant name">
+            </td>
             <td><input class="import-cell-input import-amount" data-i="${i}" data-f="amount" value="${t.amount}" type="number" step="0.01"></td>
             <td>
               <select class="import-cell-select" data-i="${i}" data-f="category">
@@ -1032,8 +1194,14 @@ function showGmailPreview(transactions, importedRefs) {
         t.refNo ? `Ref: ${t.refNo}` : ''
       ].filter(Boolean);
       const expense = {
-        date: t.date, month: t.date.slice(0,7),
-        merchant, amount, category, method: t.method || 'UPI',
+        date: t.date,
+        time: t.time || '',
+        month: t.date.slice(0, 7),
+        merchant,
+        amount,
+        category,
+        method: t.method || 'UPI',
+        type: t.type || 'debit',
         note: noteParts.join(' · '),
         createdAt: Date.now()
       };
@@ -1123,7 +1291,7 @@ async function gmailDoSync(silent = false) {
       const subject = subjectHeader?.value || '(no subject)';
       const from = fromHeader?.value || '';
       const emailDate = parseInt(msgData.internalDate || Date.now(), 10);
-      const dateStr = new Date(emailDate).toISOString().slice(0, 10);
+      const dateStr = normalizeDate(null, emailDate);
 
       const text = extractEmailText(msgData.payload || {});
       const emailBank = detectBank(from, subject, text);
@@ -1146,7 +1314,7 @@ async function gmailDoSync(silent = false) {
       result._dupeKey = dupeKey;
 
       if (importedSet.has(dupeKey) || (result.refNo && importedSet.has(result.refNo))) {
-        rows.push({ date: result.date, subject, status: 'dupe', bank: result.bank });
+        rows.push({ date: result.date, time: result.time || '', subject, status: 'dupe', bank: result.bank });
         continue;
       }
 
@@ -1155,6 +1323,7 @@ async function gmailDoSync(silent = false) {
       toImport.push(result);
       rows.push({
         date: result.date,
+        time: result.time || '',
         subject,
         status: 'pending',
         type: result.type,
@@ -1608,8 +1777,13 @@ async function renderDashboard() {
     `;
   }
 
-  // Recent 5 transactions
-  const recent5 = [...allExpenses].sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5);
+  // Recent 5 transactions (sorted by date + time)
+  const recent5 = [...allExpenses].sort((a, b) => {
+    const dComp = (b.date || '').localeCompare(a.date || '');
+    if (dComp !== 0) return dComp;
+    if (b.time && a.time) return b.time.localeCompare(a.time);
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  }).slice(0, 5);
 
   const recentItemsHTML = recent5.length === 0
     ? '<div class="empty-state" style="padding:28px 0"><div class="empty-icon">💳</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Tap "+ Add Transaction" or "Load Sample Data" above</div></div>'
@@ -1627,6 +1801,7 @@ async function renderDashboard() {
                 <span class="merchant-note">
                   <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:2px 8px">${getCatBadge(cat, 12)} <span>${cat.name}</span></span>
                   <span class="method-tag" style="font-size:10px;padding:1px 5px">${e.method || 'UPI'}</span>
+                  <span class="recent-time" style="font-size:11px;color:var(--text3)">${e.date}${e.time ? ` · ${e.time}` : ''}</span>
                   ${e.note ? `<span>· ${e.note}</span>` : ''}
                 </span>
               </div>
@@ -2105,10 +2280,13 @@ function renderAddForm(editData = null) {
         <input type="date" id="f-date" value="${e.date || today()}" class="field-input" required>
       </div>
       <div class="form-group">
-        <label class="field-label">Payment Method</label>
-        <div class="method-group">${methodBtns}</div>
+        <label class="field-label">Time</label>
+        <input type="text" id="f-time" placeholder="e.g. 08:44 PM" value="${e.time || (isEdit ? '' : formatTimeIST(Date.now()))}" class="field-input">
       </div>
     </div>
+
+    <label class="field-label">Payment Method</label>
+    <div class="method-group" style="margin-bottom:14px">${methodBtns}</div>
 
     <label class="field-label" id="merchant-field-label">${currentType === 'credit' ? 'Sender / Source' : 'Merchant / Payee'}</label>
     <input type="text" id="f-merchant" placeholder="${currentType === 'credit' ? 'e.g. Salary, Client, Friend, Cashback' : 'e.g. Swiggy, Amazon, Uber, DMart'}" value="${e.merchant || ''}" class="field-input">
@@ -2230,11 +2408,13 @@ function mountAddForm(modalMode = false) {
 
     const merchant = document.getElementById('f-merchant').value.trim();
     const date = document.getElementById('f-date').value;
+    const time = document.getElementById('f-time')?.value.trim() || state.editingExpense?.time || '';
 
     const expense = {
       amount,
       category: selectedCat,
       date,
+      time,
       month: dateToMonth(date),
       note: document.getElementById('f-note').value.trim(),
       method: selectedMethod,
@@ -2267,6 +2447,7 @@ function mountAddForm(modalMode = false) {
         document.getElementById('f-merchant').value = '';
         document.getElementById('f-note').value = '';
         document.getElementById('f-date').value = today();
+        if (document.getElementById('f-time')) document.getElementById('f-time').value = formatTimeIST(Date.now());
         selectedCat = 'food';
         selectedMethod = 'UPI';
         selectedType = 'debit';
@@ -2324,12 +2505,12 @@ async function renderTransactions() {
   // 5. Sorting
   expenses.sort((a, b) => {
     let av, bv;
-    if (state.sortCol === 'date')          { av = a.date; bv = b.date; }
+    if (state.sortCol === 'date')          { av = `${a.date} ${a.time || '00:00'}`; bv = `${b.date} ${b.time || '00:00'}`; }
     else if (state.sortCol === 'merchant') { av = (a.merchant||'').toLowerCase(); bv = (b.merchant||'').toLowerCase(); }
     else if (state.sortCol === 'category') { av = getCat(a.category).name; bv = getCat(b.category).name; }
     else if (state.sortCol === 'amount')   { av = a.amount; bv = b.amount; }
     else if (state.sortCol === 'method')   { av = a.method||''; bv = b.method||''; }
-    else                                   { av = a.date; bv = b.date; }
+    else                                   { av = `${a.date} ${a.time || '00:00'}`; bv = `${b.date} ${b.time || '00:00'}`; }
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return state.sortDir === 'asc' ? cmp : -cmp;
   });
@@ -2342,7 +2523,7 @@ async function renderTransactions() {
     `<option value="${c.id}" ${state.filterCategory === c.id ? 'selected' : ''}>${c.emoji} ${c.name}</option>`
   ).join('');
 
-  const tableColLabels = { date: 'Date', merchant: 'Merchant / Payee', category: 'Category', method: 'Method', type: 'Type', amount: 'Amount' };
+  const tableColLabels = { date: 'Date & Time', merchant: 'Merchant / Payee', category: 'Category', method: 'Method', type: 'Type', amount: 'Amount' };
   const tableHeaderCols = ['date', 'merchant', 'category', 'method', 'type', 'amount'].map(col => {
     const active = state.sortCol === col;
     const arrow = active ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕';
@@ -2366,7 +2547,10 @@ async function renderTransactions() {
         const avatarColor = getMerchantColor(e.merchant || cat.name);
         return `
           <tr class="txn-row txn-row-item" data-id="${e.id}">
-            <td class="txn-td txn-date" style="white-space:nowrap">${d}</td>
+            <td class="txn-td txn-date" style="white-space:nowrap">
+              <div class="txn-date-main">${d}</div>
+              ${e.time ? `<div class="txn-time-sub">${e.time}</div>` : ''}
+            </td>
             <td class="txn-td txn-merchant">
               <div class="merchant-cell">
                 <div class="merchant-avatar" style="background:${avatarColor}">${initial}</div>
@@ -2507,6 +2691,109 @@ async function renderTransactions() {
   </div>
 </div>
 `;
+}
+
+async function exportCSV() {
+  const expenses = await db.getAll('expenses');
+  expenses.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || '') || (b.createdAt || 0) - (a.createdAt || 0));
+
+  const esc = (val) => {
+    const s = String(val ?? '').replace(/"/g, '""');
+    return /[",\n]/.test(s) ? `"${s}"` : s;
+  };
+
+  const rows = [
+    ['Date', 'Time', 'Merchant / Payee', 'Category', 'Type', 'Amount', 'Method', 'Note'].map(esc).join(','),
+    ...expenses.map(e => {
+      const cat = getCat(e.category);
+      return [e.date, e.time || '', e.merchant || cat.name, cat.name, e.type || 'debit', e.amount, e.method || '', e.note || ''].map(esc).join(',');
+    }),
+  ];
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${expenses.length} transactions`);
+}
+
+async function exportPDF() {
+  const expenses = await db.getAll('expenses');
+  expenses.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || '') || (b.createdAt || 0) - (a.createdAt || 0));
+
+  const total = expenses.filter(e => e.type !== 'credit').reduce((s, e) => s + e.amount, 0);
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const rows = expenses.map(e => {
+    const cat = getCat(e.category);
+    const d = new Date(e.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const isCredit = e.type === 'credit';
+    return `<tr>
+      <td>${d}${e.time ? `<div style="font-size:11px;color:#666">${e.time}</div>` : ''}</td>
+      <td>${e.merchant || cat.name}</td>
+      <td><span class="cat-badge">${cat.emoji} ${cat.name}</span></td>
+      <td>${isCredit ? 'Credit' : 'Debit'}</td>
+      <td class="amt" style="color:${isCredit ? '#10b981' : '#1a0d18'}">${isCredit ? '+' : '-'}₹${e.amount.toLocaleString('en-IN')}</td>
+      <td>${e.method || ''}</td>
+      <td class="note">${e.note || ''}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Expense Report — ${dateStr}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a0d18; padding: 32px; font-size: 13px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; border-bottom: 2px solid #D99B84; padding-bottom: 12px; }
+  h1 { font-size: 22px; font-weight: 800; color: #D99B84; }
+  .sub { font-size: 12px; color: #888; margin-top: 2px; }
+  .total-box { text-align: right; }
+  .total-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+  .total-val { font-size: 26px; font-weight: 800; color: #1a0d18; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #666; padding: 8px 10px; border-bottom: 1px solid #eee; background: #fafafa; }
+  tbody tr:nth-child(even) { background: #fafafa; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .amt { font-weight: 700; text-align: right; white-space: nowrap; }
+  .note { color: #888; font-size: 12px; }
+  .cat-badge { background: #f0ebe8; border-radius: 12px; padding: 2px 8px; white-space: nowrap; }
+  tfoot td { padding: 10px; font-weight: 700; font-size: 14px; border-top: 2px solid #D99B84; }
+  tfoot .amt { color: #D99B84; font-size: 16px; }
+  @media print { body { padding: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Expense Report</h1>
+    <div class="sub">Generated ${dateStr} · ${expenses.length} transactions</div>
+  </div>
+  <div class="total-box">
+    <div class="total-label">Total Living Expenses</div>
+    <div class="total-val">₹${total.toLocaleString('en-IN')}</div>
+  </div>
+</header>
+<table>
+  <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th style="text-align:right">Amount</th><th>Method</th><th>Note</th></tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="4"><strong>Total Spent</strong></td><td class="amt">₹${total.toLocaleString('en-IN')}</td><td colspan="2"></td></tr></tfoot>
+</table>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (w) {
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+  }
 }
 
 function mountTransactions() {
@@ -3480,7 +3767,7 @@ Or: Axis Bank: INR 2,450.00 credited to A/C ending 9876 via IMPS from RAJESH..."
     amtEl.style.color = isCredit ? 'var(--income)' : 'var(--text)';
 
     document.getElementById('parsed-merchant').textContent = result.merchant || 'Unknown Merchant';
-    document.getElementById('parsed-meta').textContent = `Date: ${result.date}${result.refNo ? ` · Ref: ${result.refNo}` : ''}`;
+    document.getElementById('parsed-meta').textContent = `Date: ${result.date}${result.time ? ` · ${result.time}` : ''}${result.refNo ? ` · Ref: ${result.refNo}` : ''}`;
   });
 
   document.getElementById('btn-save-parsed-alert')?.addEventListener('click', async () => {
@@ -3490,6 +3777,7 @@ Or: Axis Bank: INR 2,450.00 credited to A/C ending 9876 via IMPS from RAJESH..."
       amount: lastParsedTxn.amount,
       merchant: lastParsedTxn.merchant,
       date: lastParsedTxn.date || today(),
+      time: lastParsedTxn.time || '',
       month: dateToMonth(lastParsedTxn.date || today()),
       method: lastParsedTxn.method || 'UPI',
       type: lastParsedTxn.type || 'debit',
@@ -3511,6 +3799,7 @@ Or: Axis Bank: INR 2,450.00 credited to A/C ending 9876 via IMPS from RAJESH..."
       amount: lastParsedTxn.amount,
       merchant: lastParsedTxn.merchant,
       date: lastParsedTxn.date || today(),
+      time: lastParsedTxn.time || '',
       method: lastParsedTxn.method || 'UPI',
       type: lastParsedTxn.type || 'debit',
       note: lastParsedTxn.refNo ? `Ref: ${lastParsedTxn.refNo}` : ''

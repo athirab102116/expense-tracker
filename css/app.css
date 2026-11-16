@@ -1285,7 +1285,7 @@ a {
 }
 
 .modal-sheet-lg { max-width: 600px; }
-.modal-sheet-xl { max-width: 860px; }
+.modal-sheet-xl { max-width: 960px; width: 95vw; }
 
 .modal-header {
   display: flex;
@@ -3129,11 +3129,38 @@ a {
 .import-table-wrap {
   max-height: 50vh;
   overflow-y: auto;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  -webkit-overflow-scrolling: touch;
+}
+.import-table {
+  min-width: 780px;
+  width: 100%;
 }
 .import-table td, .import-table th {
   padding: 8px 12px;
+}
+.import-table .col-datetime {
+  min-width: 125px;
+}
+.import-table .col-merchant {
+  min-width: 200px;
+}
+.import-merchant-input {
+  min-width: 190px;
+  width: 100%;
+}
+.txn-date-main {
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.3;
+}
+.txn-time-sub {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 2px;
+  line-height: 1.2;
 }
 .import-cell-input, .import-cell-select {
   width: 100%;

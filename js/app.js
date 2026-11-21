@@ -25,6 +25,8 @@ const state = {
   gmailSyncResult: null,
   gmailPendingImport: [],
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
+  selectedCreditCard: 'all',
+  creditCards: [],
   undoItem: null,
   undoTimer: null,
 };
@@ -379,10 +381,13 @@ async function gistSync() {
       ]);
       const learnedMerchants = await db.getSetting('learned_merchants', {});
       const pendingMerchants = await db.getSetting('pending_merchants', {});
+      const creditCards = await db.getSetting('credit_cards', null);
+      const creditCardPayments = await db.getSetting('credit_card_payments', []);
 
       const payload = JSON.stringify({
         version: 2, syncedAt: Date.now(),
         expenses, categories, budgets, merchantRules, learnedMerchants, pendingMerchants,
+        creditCards, creditCardPayments
       });
 
       const gistId = await _resolveGistId(token);
@@ -465,6 +470,8 @@ async function loadFromGist() {
     }
     if (data.learnedMerchants) await db.setSetting('learned_merchants', data.learnedMerchants);
     if (data.pendingMerchants) await db.setSetting('pending_merchants', data.pendingMerchants);
+    if (Array.isArray(data.creditCards)) await db.setSetting('credit_cards', data.creditCards);
+    if (Array.isArray(data.creditCardPayments)) await db.setSetting('credit_card_payments', data.creditCardPayments);
 
   } catch (err) {
     console.warn('Gist load failed:', err.message);
@@ -1615,7 +1622,7 @@ async function handleURLParams() {
 function updateHeaderState() {
   const titleEl = document.getElementById('header-view-title');
   if (titleEl) {
-    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', settings: 'Settings' };
+    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', cards: 'Credit Card Spendings', settings: 'Settings' };
     titleEl.textContent = map[state.view] || 'Dashboard';
   }
   const monthEl = document.getElementById('header-month-label');
@@ -1675,6 +1682,7 @@ async function renderView() {
       case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
       case 'transactions': main.innerHTML = await renderTransactions(); mountTransactions(); break;
       case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
+      case 'cards':        main.innerHTML = await renderCreditCards(); mountCreditCards(); break;
       case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
     }
   } catch (err) {
@@ -2056,6 +2064,54 @@ async function renderDashboard() {
     </div>
   </div>
 
+  <!-- Credit Card Bill & Spendings Overview Card -->
+  ${(() => {
+    return `
+  <div class="dashboard-card" style="margin-top:20px">
+    <div class="card-header-row">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:38px;height:38px;border-radius:10px;background:var(--brand-light);display:flex;align-items:center;justify-content:center;color:var(--brand);flex-shrink:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+            <line x1="2" y1="10" x2="22" y2="10"></line>
+          </svg>
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="card-heading">Credit Card Bill & Spendings</span>
+            <span id="dash-cc-status-pill"></span>
+          </div>
+          <div class="card-subheading">Tracked across cards for ${monthLabel(month)}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-primary" id="dash-quick-pay-card-btn" style="display:none;font-size:12px;padding:6px 14px">Pay Bill →</button>
+        <button class="btn-secondary" id="dash-view-cards-btn" style="font-size:12px;padding:6px 14px">Card Details →</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:14px;margin-top:16px">
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">New Card Charges</div>
+        <div class="kpi-dash-cc" id="dash-cc-spent" style="font-size:18px;font-weight:700;color:var(--text)">₹0.00</div>
+        <div id="dash-cc-txns-count" style="font-size:11px;color:var(--text3);margin-top:2px">0 transactions</div>
+      </div>
+
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Paid Off</div>
+        <div class="kpi-dash-cc" id="dash-cc-paid" style="font-size:18px;font-weight:700;color:var(--income)">₹0.00</div>
+        <div id="dash-cc-paid-pct" style="font-size:11px;color:var(--text3);margin-top:2px">0% paid</div>
+      </div>
+
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Carryover to Next Month</div>
+        <div class="kpi-dash-cc" id="dash-cc-carry" style="font-size:18px;font-weight:700;color:var(--text)">₹0.00</div>
+        <div id="dash-cc-carry-note" style="font-size:11px;color:var(--text3);margin-top:2px">Outstanding balance</div>
+      </div>
+    </div>
+  </div>`;
+  })()}
+
   <!-- Recent Transactions Card -->
   <div class="dashboard-card" style="margin-top:20px">
     <div class="card-header-row">
@@ -2155,6 +2211,64 @@ async function mountDashboard() {
       if (expense) openAddModal(expense);
     });
   });
+
+  // Populate Credit Card Summary in Dashboard
+  try {
+    const allCardPayments = await getCardPayments();
+    const { current: ccDashSummary } = calculateCreditCardMonthlySummary(allExpenses, allCardPayments, month, 'all');
+
+    const spentEl = document.getElementById('dash-cc-spent');
+    const txnsEl = document.getElementById('dash-cc-txns-count');
+    const paidEl = document.getElementById('dash-cc-paid');
+    const pctEl = document.getElementById('dash-cc-paid-pct');
+    const carryEl = document.getElementById('dash-cc-carry');
+    const carryNoteEl = document.getElementById('dash-cc-carry-note');
+    const pillEl = document.getElementById('dash-cc-status-pill');
+    const payBtn = document.getElementById('dash-quick-pay-card-btn');
+
+    if (spentEl) spentEl.textContent = fmtCurrency(ccDashSummary.spendings, true);
+    if (txnsEl) txnsEl.textContent = `${ccDashSummary.expenses.length} transaction${ccDashSummary.expenses.length !== 1 ? 's' : ''}`;
+    if (paidEl) paidEl.textContent = fmtCurrency(ccDashSummary.paid, true);
+    if (pctEl) pctEl.textContent = `${ccDashSummary.percentPaid}% of bill paid`;
+    if (carryEl) {
+      carryEl.textContent = fmtCurrency(ccDashSummary.closingBalance, true);
+      carryEl.style.color = ccDashSummary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)';
+    }
+    if (carryNoteEl) {
+      carryNoteEl.textContent = ccDashSummary.closingBalance === 0 ? 'Zero balance carried forward' : 'Unpaid balance rolling over';
+    }
+    if (pillEl) {
+      if (ccDashSummary.totalDue === 0) {
+        pillEl.className = 'cc-status-pill neutral';
+        pillEl.textContent = '● No Card Spendings';
+      } else if (ccDashSummary.closingBalance === 0) {
+        pillEl.className = 'cc-status-pill positive';
+        pillEl.textContent = '✓ Fully Paid Off';
+      } else if (ccDashSummary.paid > 0) {
+        pillEl.className = 'cc-status-pill warning';
+        pillEl.textContent = `● Partially Paid (${ccDashSummary.percentPaid}%)`;
+      } else {
+        pillEl.className = 'cc-status-pill negative';
+        pillEl.textContent = '● Payment Due';
+      }
+    }
+    if (payBtn) {
+      if (ccDashSummary.closingBalance > 0) {
+        payBtn.style.display = 'inline-flex';
+        payBtn.textContent = `Pay Bill (${fmtCurrency(ccDashSummary.closingBalance, false)}) →`;
+        payBtn.onclick = () => {
+          setView('cards');
+          setTimeout(() => openCardPaymentModal(ccDashSummary.closingBalance), 300);
+        };
+      } else {
+        payBtn.style.display = 'none';
+      }
+    }
+  } catch (err) {
+    console.warn('Dashboard CC summary error:', err);
+  }
+
+  document.getElementById('dash-view-cards-btn')?.addEventListener('click', () => setView('cards'));
 }
 
 function renderDonutChart(expenses) {
@@ -2379,6 +2493,20 @@ function renderAddForm(editData = null) {
     <label class="field-label">Payment Method</label>
     <div class="method-group" style="margin-bottom:14px">${methodBtns}</div>
 
+    <!-- Credit Card Selection (shown when Method is Card) -->
+    <div id="card-select-group" style="display:${(e.method || 'UPI') === 'Card' ? 'block' : 'none'};margin-bottom:14px">
+      <label class="field-label">Charged to Credit Card</label>
+      <select id="f-card-id" class="field-input">
+        <option value="all">General / Default Card</option>
+        <option value="hdfc" ${(e.cardId === 'hdfc' || (e.bank || '').toLowerCase().includes('hdfc')) ? 'selected' : ''}>HDFC Credit Card</option>
+        <option value="slice" ${(e.cardId === 'slice' || (e.bank || '').toLowerCase().includes('slice')) ? 'selected' : ''}>Slice Card</option>
+        <option value="sbi" ${(e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi')) ? 'selected' : ''}>SBI Card</option>
+        <option value="icici" ${(e.cardId === 'icici' || (e.bank || '').toLowerCase().includes('icici')) ? 'selected' : ''}>ICICI Amazon Pay</option>
+        <option value="axis" ${(e.cardId === 'axis' || (e.bank || '').toLowerCase().includes('axis')) ? 'selected' : ''}>Axis Bank Card</option>
+        <option value="onecard" ${(e.cardId === 'onecard' || (e.bank || '').toLowerCase().includes('onecard')) ? 'selected' : ''}>OneCard</option>
+      </select>
+    </div>
+
     <label class="field-label" id="merchant-field-label">${currentType === 'credit' ? 'Sender / Source' : 'Merchant / Payee'}</label>
     <input type="text" id="f-merchant" placeholder="${currentType === 'credit' ? 'e.g. Salary, Client, Friend, Cashback' : 'e.g. Swiggy, Amazon, Uber, DMart'}" value="${e.merchant || ''}" class="field-input">
 
@@ -2452,6 +2580,10 @@ function mountAddForm(modalMode = false) {
       document.querySelectorAll('.method-btn').forEach(e => e.classList.remove('active'));
       el.classList.add('active');
       selectedMethod = el.dataset.method;
+      const cardGroup = document.getElementById('card-select-group');
+      if (cardGroup) {
+        cardGroup.style.display = selectedMethod === 'Card' ? 'block' : 'none';
+      }
     });
   });
 
@@ -2514,6 +2646,17 @@ function mountAddForm(modalMode = false) {
       createdAt: state.editingExpense?.createdAt || Date.now(),
     };
 
+    if (selectedMethod === 'Card') {
+      const cid = document.getElementById('f-card-id')?.value || 'all';
+      expense.cardId = cid;
+      if (cid === 'hdfc') expense.bank = 'HDFC';
+      else if (cid === 'slice') expense.bank = 'Slice';
+      else if (cid === 'sbi') expense.bank = 'SBI';
+      else if (cid === 'icici') expense.bank = 'ICICI';
+      else if (cid === 'axis') expense.bank = 'Axis';
+      else if (cid === 'onecard') expense.bank = 'OneCard';
+    }
+
     if (state.editingExpense?.id) {
       expense.id = state.editingExpense.id;
       await db.put('expenses', expense);
@@ -2528,7 +2671,7 @@ function mountAddForm(modalMode = false) {
       gistSync();
       playAdd();
       triggerAddBurst(document.querySelector('#add-form [type="submit"]'));
-      showToast(selectedType === 'credit' ? 'Income added!' : 'Expense added!');
+      showToast(selectedType === 'credit' ? 'Income added!' : (selectedMethod === 'Card' ? 'Added to Expenses & Credit Card Spendings!' : 'Expense added!'));
       if (modalMode) {
         closeAddModal();
         renderView();
@@ -2569,11 +2712,13 @@ async function renderTransactions() {
     expenses = expenses.filter(e => new Date(e.date + 'T00:00:00').getTime() >= thirtyDaysAgo);
   }
 
-  // 2. Type Filter (Debit vs Credit)
+  // 2. Type Filter (Debit vs Credit vs Card)
   if (state.filterType === 'debit') {
     expenses = expenses.filter(e => e.type !== 'credit');
   } else if (state.filterType === 'credit') {
     expenses = expenses.filter(e => e.type === 'credit');
+  } else if (state.filterType === 'card') {
+    expenses = expenses.filter(e => isCreditCardExpense(e));
   }
 
   // 3. Category Filter
@@ -2734,6 +2879,7 @@ async function renderTransactions() {
           <option value="all" ${state.filterType === 'all' ? 'selected' : ''}>All Types</option>
           <option value="debit" ${state.filterType === 'debit' ? 'selected' : ''}>Expenses (Debit)</option>
           <option value="credit" ${state.filterType === 'credit' ? 'selected' : ''}>Income (Credit)</option>
+          <option value="card" ${state.filterType === 'card' ? 'selected' : ''}>💳 Credit Card Charges</option>
         </select>
 
         <!-- Category Filter -->
@@ -3261,6 +3407,826 @@ async function mountBudgets() {
     renderView();
   });
 }
+
+// ─── Credit Cards & Bill Tracking ─────────────────────────────────────────────
+const DEFAULT_CREDIT_CARDS = [
+  { id: 'all', name: 'All Cards', bank: 'All Cards', last4: '', color: '#D99B84' },
+  { id: 'hdfc', name: 'HDFC Credit Card', bank: 'HDFC', last4: '8842', color: '#3182CE', billingDay: 15, dueDay: 5 },
+  { id: 'slice', name: 'Slice Card', bank: 'Slice', last4: '5621', color: '#805AD5', billingDay: 1, dueDay: 20 },
+  { id: 'sbi', name: 'SBI Card', bank: 'SBI', last4: '9103', color: '#2B6CB0', billingDay: 18, dueDay: 8 },
+  { id: 'icici', name: 'ICICI Amazon Pay', bank: 'ICICI', last4: '3412', color: '#DD6B20', billingDay: 10, dueDay: 30 },
+  { id: 'axis', name: 'Axis Bank Card', bank: 'Axis', last4: '7729', color: '#9B2C2C', billingDay: 12, dueDay: 2 },
+  { id: 'onecard', name: 'OneCard', bank: 'OneCard', last4: '6018', color: '#4A5568', billingDay: 25, dueDay: 15 }
+];
+
+async function getCreditCards() {
+  const custom = await db.getSetting('credit_cards', null);
+  if (Array.isArray(custom) && custom.length > 0) return custom;
+  return DEFAULT_CREDIT_CARDS;
+}
+
+async function saveCreditCards(cards) {
+  await db.setSetting('credit_cards', cards);
+  gistSync();
+}
+
+async function getCardPayments() {
+  const list = await db.getSetting('credit_card_payments', []);
+  return Array.isArray(list) ? list : [];
+}
+
+async function saveCardPayment(payment) {
+  const list = await getCardPayments();
+  const id = payment.id || `cc-pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  list.push({
+    id,
+    cardId: payment.cardId || 'all',
+    month: payment.month,
+    amount: Number(payment.amount) || 0,
+    date: payment.date || today(),
+    note: payment.note || '',
+    createdAt: Date.now()
+  });
+  await db.setSetting('credit_card_payments', list);
+  gistSync();
+}
+
+async function deleteCardPayment(id) {
+  let list = await getCardPayments();
+  list = list.filter(p => p.id !== id);
+  await db.setSetting('credit_card_payments', list);
+  gistSync();
+}
+
+function isCreditCardExpense(e) {
+  if (!e || e.type === 'credit') return false;
+  if (e.method === 'Card') return true;
+  if (e.cardId && e.cardId !== 'none') return true;
+  const b = (e.bank || '').toLowerCase();
+  const n = (e.note || '').toLowerCase();
+  if (b.includes('slice') || b.includes('card') || n.includes('credit card') || n.includes('slice')) return true;
+  return false;
+}
+
+function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId = 'all') {
+  const cardExpenses = allExpenses.filter(e => {
+    if (!isCreditCardExpense(e)) return false;
+    if (targetCardId && targetCardId !== 'all') {
+      const match = (e.cardId && e.cardId === targetCardId) ||
+                    (e.bank && e.bank.toLowerCase().includes(targetCardId.toLowerCase())) ||
+                    (e.note && e.note.toLowerCase().includes(targetCardId.toLowerCase()));
+      return match;
+    }
+    return true;
+  });
+
+  const cardPayments = allPayments.filter(p => {
+    if (targetCardId && targetCardId !== 'all') {
+      return p.cardId === targetCardId || p.cardId === 'all';
+    }
+    return true;
+  });
+
+  const monthSet = new Set();
+  cardExpenses.forEach(e => {
+    const ym = e.month || e.date?.slice(0, 7);
+    if (ym) monthSet.add(ym);
+  });
+  cardPayments.forEach(p => {
+    if (p.month) monthSet.add(p.month);
+  });
+  monthSet.add(targetMonth);
+
+  const sortedMonths = Array.from(monthSet).sort();
+
+  let runningCarryOver = 0;
+  const history = {};
+
+  for (const m of sortedMonths) {
+    const mExpenses = cardExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === m);
+    const mPayments = cardPayments.filter(p => p.month === m);
+
+    const spendings = mExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const paid = mPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+    const openingBalance = runningCarryOver;
+    const totalDue = openingBalance + spendings;
+    const closingBalance = Math.max(0, totalDue - paid);
+
+    let status = 'no_spendings';
+    if (totalDue > 0) {
+      if (closingBalance === 0) status = 'paid_full';
+      else if (paid > 0) status = 'partially_paid';
+      else status = 'due';
+    }
+
+    const percentPaid = totalDue > 0 ? Math.min(100, Math.round((paid / totalDue) * 100)) : 100;
+
+    history[m] = {
+      month: m,
+      openingBalance,
+      spendings,
+      totalDue,
+      paid,
+      closingBalance,
+      status,
+      percentPaid,
+      expenses: mExpenses,
+      payments: mPayments
+    };
+
+    runningCarryOver = closingBalance;
+  }
+
+  return {
+    current: history[targetMonth] || {
+      month: targetMonth,
+      openingBalance: 0,
+      spendings: 0,
+      totalDue: 0,
+      paid: 0,
+      closingBalance: 0,
+      status: 'no_spendings',
+      percentPaid: 100,
+      expenses: [],
+      payments: []
+    },
+    history,
+    sortedMonths
+  };
+}
+
+async function renderCreditCards() {
+  const month = state.currentMonth || today().slice(0, 7);
+  const cards = await getCreditCards();
+  const selectedCardId = state.selectedCreditCard || 'all';
+  const currentCard = cards.find(c => c.id === selectedCardId) || cards[0] || { id: 'all', name: 'All Cards', bank: 'All Cards', color: '#D99B84' };
+
+  const allExpenses = await db.getAll('expenses');
+  const allPayments = await getCardPayments();
+
+  const { current: summary, history, sortedMonths } = calculateCreditCardMonthlySummary(allExpenses, allPayments, month, selectedCardId);
+
+  // Month navigation labels
+  const [curY, curM] = month.split('-').map(Number);
+  const nextMonthYm = curM === 12 ? `${curY + 1}-01` : `${curY}-${String(curM + 1).padStart(2, '0')}`;
+  const prevMonthYm = curM === 1 ? `${curY - 1}-12` : `${curY}-${String(curM - 1).padStart(2, '0')}`;
+
+  // Status badge
+  let statusBadge = '';
+  if (summary.totalDue === 0) {
+    statusBadge = '<span class="cc-status-pill neutral">● No Spendings</span>';
+  } else if (summary.closingBalance === 0) {
+    statusBadge = '<span class="cc-status-pill positive">✓ Paid in Full</span>';
+  } else if (summary.paid > 0) {
+    statusBadge = `<span class="cc-status-pill warning">● Partially Paid (${summary.percentPaid}%)</span>`;
+  } else {
+    statusBadge = '<span class="cc-status-pill negative">● Payment Due</span>';
+  }
+
+  // Card selector tabs
+  const cardTabsHtml = cards.map(c => {
+    const isAct = c.id === selectedCardId;
+    return `
+      <button class="cc-tab-pill ${isAct ? 'active' : ''}" data-card-id="${c.id}" type="button">
+        <span class="cc-tab-dot" style="background:${c.color || '#D99B84'}"></span>
+        <span class="cc-tab-name">${c.name}</span>
+        ${c.last4 ? `<span class="cc-tab-last4">··${c.last4}</span>` : ''}
+      </button>
+    `;
+  }).join('');
+
+  // Payments list HTML
+  const paymentsListHtml = summary.payments.length === 0
+    ? `
+      <div style="padding:24px 16px;text-align:center;color:var(--text3);font-size:13px;background:var(--surface2);border-radius:var(--radius-sm)">
+        No bill repayments recorded for ${monthLabel(month)} yet. Click <strong>"+ Record Payment"</strong> when you pay off your card bill.
+      </div>
+    `
+    : `
+      <div class="cc-pay-list">
+        ${summary.payments.map(p => `
+          <div class="cc-pay-item">
+            <div class="cc-pay-left">
+              <div class="cc-pay-icon">✓</div>
+              <div class="cc-pay-meta">
+                <span class="cc-pay-title">${p.note || 'Credit Card Bill Payment'}</span>
+                <span class="cc-pay-date">${p.date} · Credited towards ${monthLabel(month)} bill</span>
+              </div>
+            </div>
+            <div class="cc-pay-right">
+              <span class="cc-pay-amt">- ${fmtCurrency(p.amount, true)}</span>
+              <button class="cc-pay-del-btn" data-pay-id="${p.id}" title="Delete payment record">✕</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+  // Card transactions list HTML
+  const sortedExpenses = [...summary.expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const expensesListHtml = sortedExpenses.length === 0
+    ? `
+      <div class="empty-state" style="padding:32px 0">
+        <div class="empty-icon">💳</div>
+        <div class="empty-title">No card transactions in ${monthLabel(month)}</div>
+        <div class="empty-sub">Any transaction saved with method "Card" or parsed from bank emails appears here automatically.</div>
+      </div>
+    `
+    : `
+      <div class="recent-list">
+        ${sortedExpenses.map(e => {
+          const cat = getCat(e.category);
+          const initial = getMerchantInitial(e.merchant || cat.name);
+          const avatarColor = getMerchantColor(e.merchant || cat.name);
+          return `
+            <div class="recent-item txn-row-item" data-id="${e.id}">
+              <div class="merchant-cell">
+                <div class="merchant-avatar" style="background:${avatarColor}">${initial}</div>
+                <div class="merchant-meta">
+                  <span class="merchant-title">${e.merchant || cat.name}</span>
+                  <span class="merchant-note">
+                    <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:2px 8px">${getCatBadge(cat, 12)} <span>${cat.name}</span></span>
+                    <span class="method-tag" style="font-size:10px;padding:1px 5px">${e.bank || e.method || 'Card'}</span>
+                    <span class="recent-time" style="font-size:11px;color:var(--text3)">${e.date}${e.time ? ` · ${e.time}` : ''}</span>
+                    ${e.note ? `<span>· ${e.note}</span>` : ''}
+                  </span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <span class="amount-cell debit">-${fmtCurrency(e.amount, true)}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+  // Multi-month History Carousel HTML
+  const recentHistoryMonths = (sortedMonths.length > 0 ? sortedMonths : [month]).slice(-6);
+  const historyCarouselHtml = recentHistoryMonths.map(m => {
+    const h = history[m] || { spendings: 0, paid: 0, closingBalance: 0 };
+    const isCur = m === month;
+    const isPaid = h.closingBalance === 0 && (h.spendings > 0 || h.openingBalance > 0);
+    return `
+      <div class="cc-month-card ${isCur ? 'active' : ''}" data-jump-month="${m}">
+        <div class="cc-mc-month">${monthLabel(m)}</div>
+        <div class="cc-mc-spent">Spent: ${fmtCurrency(h.spendings, false)}</div>
+        <div class="cc-mc-spent">Paid: ${fmtCurrency(h.paid, false)}</div>
+        <div class="cc-mc-carry" style="color:${isPaid ? 'var(--income)' : (h.closingBalance > 0 ? 'var(--expense)' : 'var(--text3)')}">
+          ${isPaid ? '✓ Paid Full' : (h.closingBalance > 0 ? `Carried: ${fmtCurrency(h.closingBalance, false)}` : '₹0.00')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+<div class="view-cards">
+  <!-- Top Header Row -->
+  <div class="cc-header-row">
+    <div class="cc-title-area">
+      <h2>Credit Cards & Spendings</h2>
+      <p>Keep track of credit card bills, track monthly repayments, and monitor carried-over balances</p>
+    </div>
+    <div class="cc-header-actions">
+      <button class="btn-primary" id="btn-open-card-pay">✓ Record Payment</button>
+      ${summary.closingBalance > 0 ? `<button class="btn-secondary" id="btn-quick-pay-full" style="color:var(--brand)">⚡ Pay in Full (${fmtCurrency(summary.closingBalance, false)})</button>` : ''}
+      <button class="btn-secondary" id="btn-open-card-spend">+ Add Card Spend</button>
+      <button class="btn-secondary" id="btn-open-manage-cards">⚙ Manage Cards</button>
+    </div>
+  </div>
+
+  <!-- Card Selector Pill Tabs -->
+  <div class="cc-tabs-bar">
+    ${cardTabsHtml}
+    <button class="cc-tab-pill" id="btn-add-new-card-pill" type="button" style="border-style:dashed">
+      <span style="font-weight:700">＋</span> Add Card
+    </button>
+  </div>
+
+  <!-- Hero Section: Virtual Luxury Card + 4 KPI Cards -->
+  <div class="cc-hero-grid">
+    <!-- Virtual Credit Card Visual -->
+    <div class="virtual-credit-card" style="border-color:${currentCard.color ? currentCard.color + '44' : 'rgba(223, 196, 152, 0.22)'}">
+      <div class="vcc-top-row">
+        <span class="vcc-bank-badge">${currentCard.bank || 'CREDIT CARD'}</span>
+        ${statusBadge}
+      </div>
+
+      <div class="vcc-chip-row">
+        <div class="vcc-chip"></div>
+        <svg class="vcc-contactless" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8.5 10a4 4 0 0 1 0 5"></path>
+          <path d="M12 7.5a7 7 0 0 1 0 9"></path>
+          <path d="M15.5 5a10 10 0 0 1 0 13"></path>
+        </svg>
+      </div>
+
+      <div class="vcc-number">•••• •••• •••• ${currentCard.last4 || (currentCard.id === 'all' ? 'MULTI' : '8842')}</div>
+
+      <div class="vcc-bottom-row">
+        <div class="vcc-cardholder">
+          <span class="vcc-label">CARD NAME</span>
+          <span class="vcc-name">${currentCard.name}</span>
+        </div>
+        <div class="vcc-cycle-tag">
+          ${monthLabel(month)}
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 KPI Summary Cards -->
+    <div class="cc-kpi-subgrid">
+      <!-- 1. Total Bill Due -->
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span class="kpi-title">Total Bill Due</span>
+          <div class="kpi-icon-wrap" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-val" style="color:${summary.closingBalance > 0 ? 'var(--expense)' : (summary.totalDue > 0 ? 'var(--income)' : 'var(--text)')}">
+          ${fmtCurrency(summary.totalDue, true)}
+        </div>
+        <div class="kpi-footer">
+          <span>Carried: ${fmtCurrency(summary.openingBalance, false)} + Charges: ${fmtCurrency(summary.spendings, false)}</span>
+        </div>
+      </div>
+
+      <!-- 2. New Card Spendings -->
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span class="kpi-title">New Spendings</span>
+          <div class="kpi-icon-wrap" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="17 7 17 17 7 17"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-val">${fmtCurrency(summary.spendings, true)}</div>
+        <div class="kpi-footer">
+          <span>${summary.expenses.length} transaction${summary.expenses.length !== 1 ? 's' : ''} in ${monthLabel(month).split(' ')[0]}</span>
+        </div>
+      </div>
+
+      <!-- 3. Paid Off -->
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span class="kpi-title">Paid Off</span>
+          <div class="kpi-icon-wrap" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-val" style="color:var(--income)">${fmtCurrency(summary.paid, true)}</div>
+        <div class="cc-progress-wrap">
+          <div class="cc-progress-track">
+            <div class="cc-progress-fill" style="width:${summary.percentPaid}%"></div>
+          </div>
+        </div>
+        <div class="kpi-footer">
+          <span>${summary.percentPaid}% paid (${summary.payments.length} repayment${summary.payments.length !== 1 ? 's' : ''})</span>
+        </div>
+      </div>
+
+      <!-- 4. Carried Over to Next Month -->
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <span class="kpi-title">Carried Over to ${monthLabel(nextMonthYm).split(' ')[0]}</span>
+          <div class="kpi-icon-wrap" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="kpi-val" style="color:${summary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)'}">
+          ${fmtCurrency(summary.closingBalance, true)}
+        </div>
+        <div class="kpi-footer">
+          <span>${summary.closingBalance === 0 ? 'Zero balance carried forward' : `Unpaid balance rolling to ${monthLabel(nextMonthYm)}`}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statement & Month-to-Month Carryover Ledger Card -->
+  <div class="cc-ledger-card">
+    <div class="cc-ledger-title-row">
+      <div class="cc-ledger-heading">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <span>Monthly Statement & Rollover Ledger</span>
+      </div>
+      <span style="font-size:12.5px;color:var(--text3)">Cycle: ${monthLabel(month)}</span>
+    </div>
+
+    <div class="cc-ledger-table">
+      <div class="cc-ledger-row">
+        <span><span class="cc-ledger-symbol">+</span> Opening Balance Carried Over from ${monthLabel(prevMonthYm)}</span>
+        <span class="${summary.openingBalance > 0 ? 'cc-amt-amber' : ''}">${fmtCurrency(summary.openingBalance, true)}</span>
+      </div>
+      <div class="cc-ledger-row">
+        <span><span class="cc-ledger-symbol">+</span> New Charges & Debits in ${monthLabel(month)}</span>
+        <span class="${summary.spendings > 0 ? 'cc-amt-red' : ''}">${fmtCurrency(summary.spendings, true)}</span>
+      </div>
+      <div class="cc-ledger-row total-due">
+        <span><span class="cc-ledger-symbol">=</span> <strong>Total Bill Amount Due</strong></span>
+        <strong>${fmtCurrency(summary.totalDue, true)}</strong>
+      </div>
+      <div class="cc-ledger-row">
+        <span><span class="cc-ledger-symbol">-</span> Amount Paid Off / Payments Credited</span>
+        <span class="cc-amt-green">${summary.paid > 0 ? `- ${fmtCurrency(summary.paid, true)}` : '₹0.00'}</span>
+      </div>
+      <div class="cc-ledger-row closing-row">
+        <span><span class="cc-ledger-symbol">=</span> <strong>Outstanding Balance Carried Over to ${monthLabel(nextMonthYm)}</strong></span>
+        <strong style="color:${summary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)'}">
+          ${fmtCurrency(summary.closingBalance, true)}
+        </strong>
+      </div>
+    </div>
+
+    <!-- Status explanation alert -->
+    <div style="padding:14px 16px;border-radius:var(--radius-sm);background:${summary.closingBalance === 0 && summary.totalDue > 0 ? 'var(--income-light)' : (summary.closingBalance > 0 ? 'var(--warning-light)' : 'var(--surface2)')};border:1px solid ${summary.closingBalance === 0 && summary.totalDue > 0 ? 'var(--income-border)' : (summary.closingBalance > 0 ? 'var(--warning-border)' : 'var(--border-subtle)')};display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="font-size:13px;color:var(--text);line-height:1.4">
+        ${summary.totalDue === 0 ? '✨ No card charges or unpaid carryover for this month.' : (summary.closingBalance === 0 ? '🎉 <strong>Paid in Full!</strong> Your entire card bill has been settled. ₹0.00 will be carried over to next month.' : `🔔 <strong>${fmtCurrency(summary.closingBalance, true)}</strong> remains outstanding and will be carried over into ${monthLabel(nextMonthYm)}'s bill.`)}
+      </div>
+      ${summary.closingBalance > 0 ? `
+        <button class="btn-primary" id="btn-ledger-pay-btn" style="font-size:12px;padding:6px 14px">Pay Balance (${fmtCurrency(summary.closingBalance, false)}) →</button>
+      ` : ''}
+    </div>
+  </div>
+
+  <!-- Recorded Payments Section -->
+  <div class="dashboard-card" style="margin-bottom:24px">
+    <div class="card-header-row">
+      <div>
+        <div class="card-heading">Bill Payments Recorded</div>
+        <div class="card-subheading">Repayments applied against ${monthLabel(month)} bill</div>
+      </div>
+      <button class="btn-link" id="btn-add-payment-link" style="font-size:12px;font-weight:600">+ Record Payment</button>
+    </div>
+    ${paymentsListHtml}
+  </div>
+
+  <!-- Transactions Charged to Credit Card -->
+  <div class="dashboard-card" style="margin-bottom:24px">
+    <div class="card-header-row">
+      <div>
+        <div class="card-heading">Card Transactions</div>
+        <div class="card-subheading">All charges and debits billed to this card in ${monthLabel(month)}</div>
+      </div>
+      <span style="font-size:12px;font-weight:600;color:var(--text3)">Total: ${fmtCurrency(summary.spendings, false)}</span>
+    </div>
+    ${expensesListHtml}
+  </div>
+
+  <!-- Multi-Month Balance Carryover Timeline -->
+  <div class="dashboard-card">
+    <div class="card-header-row">
+      <div>
+        <div class="card-heading">Balance Rollover Timeline</div>
+        <div class="card-subheading">Month-over-month card spendings, repayments, and carryovers</div>
+      </div>
+    </div>
+    <div class="cc-history-carousel">
+      ${historyCarouselHtml}
+    </div>
+  </div>
+</div>
+`;
+}
+
+function mountCreditCards() {
+  // Card tab switching
+  document.querySelectorAll('.cc-tab-pill[data-card-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.selectedCreditCard = btn.dataset.cardId;
+      playNav();
+      renderView();
+    });
+  });
+
+  // Add new card pill
+  document.getElementById('btn-add-new-card-pill')?.addEventListener('click', () => {
+    openCardManageModal();
+  });
+
+  // Manage cards button
+  document.getElementById('btn-open-manage-cards')?.addEventListener('click', () => {
+    openCardManageModal();
+  });
+
+  // Record payment button
+  document.getElementById('btn-open-card-pay')?.addEventListener('click', () => {
+    openCardPaymentModal();
+  });
+  document.getElementById('btn-add-payment-link')?.addEventListener('click', () => {
+    openCardPaymentModal();
+  });
+  document.getElementById('btn-ledger-pay-btn')?.addEventListener('click', () => {
+    openCardPaymentModal();
+  });
+
+  // 1-Click Pay in Full button
+  document.getElementById('btn-quick-pay-full')?.addEventListener('click', async () => {
+    const allExpenses = await db.getAll('expenses');
+    const allPayments = await getCardPayments();
+    const { current: summary } = calculateCreditCardMonthlySummary(allExpenses, allPayments, state.currentMonth, state.selectedCreditCard);
+    if (summary.closingBalance <= 0) return;
+
+    if (confirm(`Mark entire remaining bill of ${fmtCurrency(summary.closingBalance, true)} as paid for ${monthLabel(state.currentMonth)}?`)) {
+      await saveCardPayment({
+        cardId: state.selectedCreditCard || 'all',
+        month: state.currentMonth,
+        amount: summary.closingBalance,
+        date: today(),
+        note: `Full payment for ${monthLabel(state.currentMonth)} bill`
+      });
+      playAdd();
+      showToast(`Recorded full payment of ${fmtCurrency(summary.closingBalance, true)}!`, 'success');
+      renderView();
+    }
+  });
+
+  // Add Card Spend button
+  document.getElementById('btn-open-card-spend')?.addEventListener('click', () => {
+    openAddModal({ method: 'Card', cardId: state.selectedCreditCard !== 'all' ? state.selectedCreditCard : 'hdfc' });
+  });
+
+  // Delete payment record
+  document.querySelectorAll('.cc-pay-del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pid = btn.dataset.payId;
+      if (!pid) return;
+      if (confirm('Delete this payment record? This will adjust the carried over balance.')) {
+        await deleteCardPayment(pid);
+        playDelete();
+        showToast('Payment record removed', 'success');
+        renderView();
+      }
+    });
+  });
+
+  // Click transaction to edit
+  document.querySelectorAll('.view-cards .txn-row-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = parseInt(el.dataset.id);
+      const expense = await db.get('expenses', id);
+      if (expense) openAddModal(expense);
+    });
+  });
+
+  // History timeline card click
+  document.querySelectorAll('.cc-month-card[data-jump-month]').forEach(el => {
+    el.addEventListener('click', () => {
+      state.currentMonth = el.dataset.jumpMonth;
+      playNav();
+      renderView();
+    });
+  });
+}
+
+async function openCardPaymentModal(suggestedAmount = null, targetCardId = null) {
+  const allExpenses = await db.getAll('expenses');
+  const allPayments = await getCardPayments();
+  const cardId = targetCardId || state.selectedCreditCard || 'all';
+  const { current: summary } = calculateCreditCardMonthlySummary(allExpenses, allPayments, state.currentMonth, cardId);
+
+  const dueAmount = suggestedAmount != null ? suggestedAmount : summary.closingBalance;
+  const cards = await getCreditCards();
+
+  const cardOptions = cards.map(c =>
+    `<option value="${c.id}" ${c.id === cardId ? 'selected' : ''}>${c.name} ${c.last4 ? `(··${c.last4})` : ''}</option>`
+  ).join('');
+
+  const modalBody = document.getElementById('card-pay-modal-body');
+  if (!modalBody) return;
+
+  modalBody.innerHTML = `
+    <div class="add-header">
+      <button class="modal-close-btn" id="close-card-pay-btn" type="button">✕</button>
+      <h2>Record Credit Card Payment</h2>
+    </div>
+
+    <form id="card-pay-form" autocomplete="off">
+      <div class="card-pay-context-box">
+        <div class="cp-context-label">Outstanding Bill for <strong>${monthLabel(state.currentMonth)}</strong></div>
+        <div class="cp-context-amount">${fmtCurrency(summary.closingBalance, true)}</div>
+      </div>
+
+      <label class="field-label">Amount Paid</label>
+      <div class="amount-input-wrap">
+        <span class="currency-sym">₹</span>
+        <input type="number" id="cp-amount" inputmode="decimal" placeholder="0.00" value="${dueAmount > 0 ? dueAmount : ''}" required step="0.01" min="0.01" class="amount-input">
+      </div>
+
+      <div class="quick-amounts" style="margin-bottom:14px">
+        ${dueAmount > 0 ? `
+          <button type="button" class="quick-amt-chip" id="cp-chip-full" data-amt="${dueAmount}">Pay Full (₹${fmtCurrency(dueAmount, false)})</button>
+          <button type="button" class="quick-amt-chip" id="cp-chip-half" data-amt="${Math.round(dueAmount / 2)}">Pay Half (₹${fmtCurrency(Math.round(dueAmount / 2), false)})</button>
+        ` : ''}
+        <button type="button" class="quick-amt-chip" data-amt="5000">+₹5,000</button>
+        <button type="button" class="quick-amt-chip" data-amt="10000">+₹10,000</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="field-label">Payment Date</label>
+          <input type="date" id="cp-date" value="${today()}" class="field-input" required>
+        </div>
+        <div class="form-group">
+          <label class="field-label">Credit Card</label>
+          <select id="cp-card-select" class="field-input">
+            ${cardOptions}
+          </select>
+        </div>
+      </div>
+
+      <label class="field-label">Note / Payment Method (optional)</label>
+      <input type="text" id="cp-note" placeholder="e.g. Paid via HDFC NetBanking, Cred, UPI" class="field-input">
+
+      <label class="form-check-label" style="display:flex;align-items:center;gap:8px;margin:14px 0 18px;cursor:pointer;font-size:13px;color:var(--text2)">
+        <input type="checkbox" id="cp-record-expense-chk" checked style="accent-color:var(--brand);width:16px;height:16px">
+        <span>Also log as an expense under Debt Repayment (deducts from bank balance)</span>
+      </label>
+
+      <button type="submit" class="btn-primary" style="width:100%" id="cp-submit-btn">✓ Save Payment</button>
+    </form>
+  `;
+
+  openModal('card-pay-modal');
+
+  document.getElementById('close-card-pay-btn')?.addEventListener('click', () => closeModal('card-pay-modal'));
+  const modalEl = document.getElementById('card-pay-modal');
+  modalEl._backdropHandler = e => { if (e.target === modalEl) closeModal('card-pay-modal'); };
+  modalEl.addEventListener('click', modalEl._backdropHandler);
+
+  // Quick preset chips
+  modalBody.querySelectorAll('.quick-amt-chip[data-amt]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const inp = document.getElementById('cp-amount');
+      if (inp) {
+        inp.value = chip.dataset.amt;
+        inp.focus();
+      }
+    });
+  });
+
+  // Submit payment form
+  document.getElementById('card-pay-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const amount = parseAmount(document.getElementById('cp-amount').value);
+    if (!amount || amount <= 0) return showToast('Enter a valid amount', 'error');
+
+    const paymentDate = document.getElementById('cp-date').value;
+    const paymentCardId = document.getElementById('cp-card-select').value;
+    const note = document.getElementById('cp-note').value.trim();
+    const alsoExpense = document.getElementById('cp-record-expense-chk')?.checked;
+
+    await saveCardPayment({
+      cardId: paymentCardId,
+      month: state.currentMonth,
+      amount,
+      date: paymentDate,
+      note: note || `Bill payment for ${monthLabel(state.currentMonth)}`
+    });
+
+    if (alsoExpense) {
+      const cardsList = await getCreditCards();
+      const c = cardsList.find(x => x.id === paymentCardId);
+      const cardTitle = c ? c.name : 'Credit Card';
+      await db.add('expenses', {
+        amount,
+        merchant: `${cardTitle} Bill Payment`,
+        category: 'debt',
+        date: paymentDate,
+        time: formatTimeIST(Date.now()),
+        month: dateToMonth(paymentDate),
+        method: 'Transfer',
+        type: 'debit',
+        note: `Credit card bill payment: ${note || monthLabel(state.currentMonth)}`.trim(),
+        createdAt: Date.now()
+      });
+    }
+
+    closeModal('card-pay-modal');
+    playAdd();
+    showToast(`Payment of ${fmtCurrency(amount, true)} recorded! Bill updated.`, 'success');
+    renderView();
+  });
+}
+
+async function openCardManageModal() {
+  const cards = await getCreditCards();
+  const modalBody = document.getElementById('card-manage-modal-body');
+  if (!modalBody) return;
+
+  const cardsListHtml = cards.map(c => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${c.color || '#D99B84'}"></span>
+        <div>
+          <div style="font-size:13.5px;font-weight:600;color:var(--text)">${c.name}</div>
+          <div style="font-size:11.5px;color:var(--text3)">${c.bank || 'Card'}${c.last4 ? ` · Ending in ${c.last4}` : ''}</div>
+        </div>
+      </div>
+      ${c.id !== 'all' ? `
+        <button class="btn-link danger cc-del-card-btn" data-del-card="${c.id}" style="font-size:12px">Remove</button>
+      ` : '<span style="font-size:11px;color:var(--text3);font-weight:600">Default</span>'}
+    </div>
+  `).join('');
+
+  modalBody.innerHTML = `
+    <div class="add-header">
+      <button class="modal-close-btn" id="close-card-manage-btn" type="button">✕</button>
+      <h2>Manage Credit Cards</h2>
+    </div>
+
+    <div style="margin-bottom:18px">
+      <label class="field-label" style="margin-bottom:8px">Registered Credit Cards</label>
+      ${cardsListHtml}
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <h3 style="font-size:14px;font-weight:700;color:var(--text);margin:0 0 12px">＋ Add Custom Credit Card</h3>
+      <form id="cc-add-card-form" autocomplete="off">
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="field-label">Card Display Name</label>
+          <input type="text" id="m-card-name" placeholder="e.g. HDFC Millennia, Slice Spark, SBI Elite" class="field-input" required>
+        </div>
+
+        <div class="form-row" style="margin-bottom:14px">
+          <div class="form-group">
+            <label class="field-label">Bank</label>
+            <input type="text" id="m-card-bank" placeholder="e.g. HDFC, Slice, SBI, ICICI" class="field-input" required>
+          </div>
+          <div class="form-group">
+            <label class="field-label">Last 4 Digits (optional)</label>
+            <input type="text" id="m-card-last4" placeholder="e.g. 1234" maxlength="4" class="field-input">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" style="width:100%">Save Credit Card</button>
+      </form>
+    </div>
+  `;
+
+  openModal('card-manage-modal');
+
+  document.getElementById('close-card-manage-btn')?.addEventListener('click', () => closeModal('card-manage-modal'));
+  const modalEl = document.getElementById('card-manage-modal');
+  modalEl._backdropHandler = e => { if (e.target === modalEl) closeModal('card-manage-modal'); };
+  modalEl.addEventListener('click', modalEl._backdropHandler);
+
+  // Delete card button
+  modalBody.querySelectorAll('.cc-del-card-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cid = btn.dataset.delCard;
+      if (confirm('Remove this credit card from your registered list?')) {
+        let curCards = await getCreditCards();
+        curCards = curCards.filter(c => c.id !== cid);
+        await saveCreditCards(curCards);
+        showToast('Card removed');
+        openCardManageModal();
+      }
+    });
+  });
+
+  // Add custom card submit
+  document.getElementById('cc-add-card-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = document.getElementById('m-card-name').value.trim();
+    const bank = document.getElementById('m-card-bank').value.trim();
+    const last4 = document.getElementById('m-card-last4').value.trim();
+    if (!name) return;
+
+    const curCards = await getCreditCards();
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    curCards.push({
+      id: `${id}-${Date.now().toString(36).slice(-3)}`,
+      name,
+      bank,
+      last4,
+      color: '#D99B84'
+    });
+
+    await saveCreditCards(curCards);
+    closeModal('card-manage-modal');
+    showToast(`Added ${name}!`, 'success');
+    renderView();
+  });
+}
+
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 const CAT_EMOJI_PRESETS = ['🍽️','🛒','🚌','🏪','💡','🏠','🎬','💊','📚','✈️','☕','🎁','💅','🐾','🏋️','🎵','🍕','🥗','🎮','💻','🧴','🌿','🎨','🏦','💰','🧾','🤝','🛠️','📱','🎯'];

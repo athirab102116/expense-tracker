@@ -28,7 +28,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=70">
+  <link rel="stylesheet" href="css/app.css?v=71">
 </head>
 <body>
   <div id="app">
@@ -103,6 +103,16 @@
             </svg>
           </span>
           <span class="nav-label">Budgets</span>
+        </button>
+
+        <button class="nav-item" data-view="cards" aria-label="Credit Cards" data-tooltip="Credit Cards">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+          </span>
+          <span class="nav-label">Credit Cards</span>
         </button>
 
         <button class="nav-item" data-view="settings" aria-label="Settings" data-tooltip="Settings">
@@ -231,6 +241,14 @@
         </div>
       </button>
 
+      <button class="mobile-nav-item" data-view="cards" aria-label="Credit Cards">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+          <line x1="2" y1="10" x2="22" y2="10"></line>
+        </svg>
+        <span>Cards</span>
+      </button>
+
       <button class="mobile-nav-item" data-view="budgets" aria-label="Budgets">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
@@ -296,6 +314,22 @@
     </div>
   </div>
 
+  <!-- Credit Card Payment / Pay Off Modal -->
+  <div class="modal" id="card-pay-modal">
+    <div class="modal-sheet modal-sheet-md">
+      <div class="modal-handle"></div>
+      <div id="card-pay-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Manage Credit Cards Modal -->
+  <div class="modal" id="card-manage-modal">
+    <div class="modal-sheet modal-sheet-md">
+      <div class="modal-handle"></div>
+      <div id="card-manage-modal-body"></div>
+    </div>
+  </div>
+
   <!-- Google Identity Services (for Gmail OAuth) -->
   <script src="https://accounts.google.com/gsi/client"></script>
   <!-- Chart.js (bundled locally) -->
@@ -303,13 +337,13 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=70"></script>
+  <script type="module" src="js/app.js?v=71"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=70')
+        navigator.serviceWorker.register('sw.js?v=71')
           .then(r => console.log('SW registered:', r.scope))
           .catch(e => console.log('SW registration failed:', e));
       });

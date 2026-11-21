@@ -1252,14 +1252,8 @@ async function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from
   }
 
   let cardId = null;
-  if (bank === 'SBI Credit Card') cardId = 'sbi';
-  else if (bank === 'Slice Credit') cardId = 'slice';
-  else if (bank === 'HDFC Credit Card') cardId = 'hdfc';
-  else if (method === 'Card') {
-    if (/sbi/i.test(bank)) cardId = 'sbi';
-    else if (/slice/i.test(bank)) cardId = 'slice';
-    else if (/hdfc/i.test(bank)) cardId = 'hdfc';
-    else if (/icici/i.test(bank)) cardId = 'icici';
+  if (bank === 'SBI Credit Card' || (method === 'Card' && /sbi/i.test(bank))) {
+    cardId = 'sbi';
   }
 
   return { amount, merchant, date, time, method, refNo, bank, type, cardId };
@@ -1676,7 +1670,7 @@ async function handleURLParams() {
 function updateHeaderState() {
   const titleEl = document.getElementById('header-view-title');
   if (titleEl) {
-    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', cards: 'Credit Card Spendings', settings: 'Settings' };
+    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', cards: 'SBI Credit Card', settings: 'Settings' };
     titleEl.textContent = map[state.view] || 'Dashboard';
   }
   const monthEl = document.getElementById('header-month-label');
@@ -2132,10 +2126,10 @@ async function renderDashboard() {
         </div>
         <div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="card-heading">Credit Card Bill & Spendings</span>
+            <span class="card-heading">SBI Credit Card Bill & Spendings</span>
             <span id="dash-cc-status-pill"></span>
           </div>
-          <div class="card-subheading">Tracked across cards for ${monthLabel(month)}</div>
+          <div class="card-subheading">Tracked for ${monthLabel(month)}</div>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -2551,13 +2545,8 @@ function renderAddForm(editData = null) {
     <div id="card-select-group" style="display:${(e.method || 'UPI') === 'Card' ? 'block' : 'none'};margin-bottom:14px">
       <label class="field-label">Charged to Credit Card</label>
       <select id="f-card-id" class="field-input">
-        <option value="sbi" ${(e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi card') || (e.bank || '').toLowerCase() === 'sbi') ? 'selected' : ''}>SBI Credit Card</option>
-        <option value="slice" ${(e.cardId === 'slice' || (e.bank || '').toLowerCase().includes('slice credit') || (e.bank || '').toLowerCase() === 'slice') ? 'selected' : ''}>Slice Credit</option>
-        <option value="hdfc" ${(e.cardId === 'hdfc' || (e.bank || '').toLowerCase().includes('hdfc')) ? 'selected' : ''}>HDFC Credit Card</option>
-        <option value="icici" ${(e.cardId === 'icici' || (e.bank || '').toLowerCase().includes('icici')) ? 'selected' : ''}>ICICI Amazon Pay</option>
-        <option value="axis" ${(e.cardId === 'axis' || (e.bank || '').toLowerCase().includes('axis')) ? 'selected' : ''}>Axis Bank Card</option>
-        <option value="onecard" ${(e.cardId === 'onecard' || (e.bank || '').toLowerCase().includes('onecard')) ? 'selected' : ''}>OneCard</option>
-        <option value="all">General / Other Card</option>
+        <option value="sbi" ${(!e.cardId || e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi card') || (e.bank || '').toLowerCase() === 'sbi credit card') ? 'selected' : ''}>SBI Credit Card (Counted in Credit Bill)</option>
+        <option value="other" ${(e.cardId === 'other' || e.cardId === 'none' || (e.bank && !e.bank.toLowerCase().includes('sbi'))) ? 'selected' : ''}>Other Card / Slice (Normal Expense, not in Credit Bill)</option>
       </select>
     </div>
 
@@ -2723,13 +2712,13 @@ function mountAddForm(modalMode = false) {
     if (selectedMethod === 'Card') {
       const cid = document.getElementById('f-card-id')?.value || 'all';
       expense.cardId = cid;
-      if (cid === 'sbi') expense.bank = 'SBI Credit Card';
-      else if (cid === 'slice') expense.bank = 'Slice Credit';
-      else if (cid === 'hdfc') expense.bank = 'HDFC Credit Card';
-      else if (cid === 'icici') expense.bank = 'ICICI Amazon Pay';
-      else if (cid === 'axis') expense.bank = 'Axis Bank Card';
-      else if (cid === 'onecard') expense.bank = 'OneCard';
-      else expense.bank = 'Credit Card';
+      if (cid === 'sbi') {
+        expense.cardId = 'sbi';
+        expense.bank = 'SBI Credit Card';
+      } else {
+        expense.cardId = null;
+        expense.bank = 'Other Card';
+      }
     } else {
       expense.cardId = null;
       const acct = document.getElementById('f-account-id')?.value;
@@ -3493,24 +3482,10 @@ async function mountBudgets() {
 
 // ─── Credit Cards & Bill Tracking ─────────────────────────────────────────────
 const DEFAULT_CREDIT_CARDS = [
-  { id: 'all', name: 'All Cards', bank: 'All Cards', last4: '', color: '#D99B84' },
-  { id: 'sbi', name: 'SBI Credit Card', bank: 'SBI Card', last4: '9103', color: '#1E56A0', billingDay: 18, dueDay: 8 },
-  { id: 'slice', name: 'Slice Credit', bank: 'Slice Credit', last4: '5621', color: '#805AD5', billingDay: 1, dueDay: 20 },
-  { id: 'hdfc', name: 'HDFC Credit Card', bank: 'HDFC', last4: '8842', color: '#3182CE', billingDay: 15, dueDay: 5 },
-  { id: 'icici', name: 'ICICI Amazon Pay', bank: 'ICICI', last4: '3412', color: '#DD6B20', billingDay: 10, dueDay: 30 },
-  { id: 'axis', name: 'Axis Bank Card', bank: 'Axis', last4: '7729', color: '#9B2C2C', billingDay: 12, dueDay: 2 },
-  { id: 'onecard', name: 'OneCard', bank: 'OneCard', last4: '6018', color: '#4A5568', billingDay: 25, dueDay: 15 }
+  { id: 'sbi', name: 'SBI Credit Card', bank: 'SBI Card', last4: '9103', color: '#1E56A0', billingDay: 18, dueDay: 8 }
 ];
 
 async function getCreditCards() {
-  const custom = await db.getSetting('credit_cards', null);
-  if (Array.isArray(custom) && custom.length > 0) {
-    return custom.map(c => {
-      if (c.id === 'slice' && c.name === 'Slice Card') return { ...c, name: 'Slice Credit', bank: 'Slice Credit' };
-      if (c.id === 'sbi' && c.name === 'SBI Card') return { ...c, name: 'SBI Credit Card', bank: 'SBI Card', color: '#1E56A0' };
-      return c;
-    });
-  }
   return DEFAULT_CREDIT_CARDS;
 }
 
@@ -3529,7 +3504,7 @@ async function saveCardPayment(payment) {
   const id = payment.id || `cc-pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   list.push({
     id,
-    cardId: payment.cardId || 'all',
+    cardId: 'sbi',
     month: payment.month,
     amount: Number(payment.amount) || 0,
     date: payment.date || today(),
@@ -3553,56 +3528,32 @@ function isCreditCardExpense(e) {
   const b = (e.bank || '').toLowerCase();
   const n = (e.note || '').toLowerCase();
 
-  // 1. Explicitly exclude Savings Accounts (Slice Savings, SBI Savings, bank accounts)
-  if (b.includes('slice savings') || b.includes('slice account') || n.includes('slice savings') || n.includes('slice account')) {
-    return false;
-  }
-  if (b.includes('sbi savings') || b.includes('sbi account') || n.includes('sbi savings') || n.includes('sbi account')) {
+  // 1. Exclude savings accounts debits (UPI, NetBanking, transfers from savings accounts)
+  if (b.includes('savings') || b.includes('sbi account') || n.includes('savings') || n.includes('sbi account')) {
     return false;
   }
 
-  // 2. Explicit Credit Card ID assigned
-  if (e.cardId && e.cardId !== 'none') return true;
+  // 2. Exclude other cards or banks (Slice, HDFC, ICICI, Axis, etc.)
+  if (b.includes('slice') || n.includes('slice')) return false;
+  if (b.includes('hdfc') || n.includes('hdfc')) return false;
+  if (b.includes('icici') || n.includes('icici')) return false;
+  if (b.includes('axis') || n.includes('axis')) return false;
 
-  // 3. Payment Method is Card
-  if (e.method === 'Card') return true;
+  // 3. ONLY payments made FROM SBI Credit Card:
+  if (e.cardId === 'sbi') return true;
+  if (b.includes('sbi credit') || b.includes('sbi card') || b === 'sbicard') return true;
+  if (n.includes('sbi credit') || n.includes('sbi card') || n.includes('sbicard')) return true;
+  if (e.method === 'Card' && b.includes('sbi')) return true;
 
-  // 4. Note or Bank explicitly specifies Credit Card / Slice Credit / SBI Card
-  if (b.includes('credit card') || b.includes('slice credit') || b.includes('sbi card') || b.includes('sbicard')) return true;
-  if (n.includes('credit card') || n.includes('slice credit') || n.includes('sbi card') || n.includes('sbicard')) return true;
-
-  // 5. If method is UPI, Transfer, Cash, or NetBanking without cardId, it is savings/bank debit
-  if (e.method === 'UPI' || e.method === 'Transfer' || e.method === 'Cash' || e.method === 'NetBanking') return false;
-
-  if (b.includes('card') || n.includes('card')) return true;
   return false;
 }
 
-function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId = 'all') {
-  const cardExpenses = allExpenses.filter(e => {
-    if (!isCreditCardExpense(e)) return false;
-    if (targetCardId && targetCardId !== 'all') {
-      const tid = targetCardId.toLowerCase();
-      if (tid === 'slice') {
-        return e.cardId === 'slice' || (e.bank && e.bank.toLowerCase().includes('slice credit')) || (e.note && e.note.toLowerCase().includes('slice credit'));
-      }
-      if (tid === 'sbi') {
-        return e.cardId === 'sbi' || (e.bank && e.bank.toLowerCase().includes('sbi')) || (e.note && e.note.toLowerCase().includes('sbi card'));
-      }
-      const match = (e.cardId && e.cardId === targetCardId) ||
-                    (e.bank && e.bank.toLowerCase().includes(tid)) ||
-                    (e.note && e.note.toLowerCase().includes(tid));
-      return match;
-    }
-    return true;
-  });
+function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId = 'sbi') {
+  // Only payments made FROM SBI Credit Card
+  const cardExpenses = allExpenses.filter(e => isCreditCardExpense(e));
 
-  const cardPayments = allPayments.filter(p => {
-    if (targetCardId && targetCardId !== 'all') {
-      return p.cardId === targetCardId || p.cardId === 'all';
-    }
-    return true;
-  });
+  // Only payments made TO SBI Credit Card
+  const cardPayments = allPayments.filter(p => p.cardId === 'sbi' || p.cardId === 'all' || (p.note && p.note.toLowerCase().includes('sbi')));
 
   const monthSet = new Set();
   cardExpenses.forEach(e => {
@@ -3717,7 +3668,7 @@ async function renderCreditCards() {
   const paymentsListHtml = summary.payments.length === 0
     ? `
       <div style="padding:24px 16px;text-align:center;color:var(--text3);font-size:13px;background:var(--surface2);border-radius:var(--radius-sm)">
-        No bill repayments recorded for ${monthLabel(month)} yet. Click <strong>"+ Record Payment"</strong> when you pay off your card bill.
+        No bill repayments recorded for SBI Credit Card in ${monthLabel(month)} yet. Click <strong>"+ Record Payment"</strong> when you pay off your card bill.
       </div>
     `
     : `
@@ -3727,7 +3678,7 @@ async function renderCreditCards() {
             <div class="cc-pay-left">
               <div class="cc-pay-icon">✓</div>
               <div class="cc-pay-meta">
-                <span class="cc-pay-title">${p.note || 'Credit Card Bill Payment'}</span>
+                <span class="cc-pay-title">${p.note || 'SBI Credit Card Bill Payment'}</span>
                 <span class="cc-pay-date">${p.date} · Credited towards ${monthLabel(month)} bill</span>
               </div>
             </div>
@@ -3746,8 +3697,8 @@ async function renderCreditCards() {
     ? `
       <div class="empty-state" style="padding:32px 0">
         <div class="empty-icon">💳</div>
-        <div class="empty-title">No card transactions in ${monthLabel(month)}</div>
-        <div class="empty-sub">Any transaction saved with method "Card" or parsed from bank emails appears here automatically.</div>
+        <div class="empty-title">No SBI Card transactions in ${monthLabel(month)}</div>
+        <div class="empty-sub">Only charges made from your SBI Credit Card or parsed from SBI Card emails appear here.</div>
       </div>
     `
     : `
@@ -3764,7 +3715,7 @@ async function renderCreditCards() {
                   <span class="merchant-title">${e.merchant || cat.name}</span>
                   <span class="merchant-note">
                     <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:2px 8px">${getCatBadge(cat, 12)} <span>${cat.name}</span></span>
-                    <span class="method-tag" style="font-size:10px;padding:1px 5px">${e.bank || e.method || 'Card'}</span>
+                    <span class="method-tag" style="font-size:10px;padding:1px 5px">SBI Card</span>
                     <span class="recent-time" style="font-size:11px;color:var(--text3)">${e.date}${e.time ? ` · ${e.time}` : ''}</span>
                     ${e.note ? `<span>· ${e.note}</span>` : ''}
                   </span>
@@ -3802,23 +3753,23 @@ async function renderCreditCards() {
   <!-- Top Header Row -->
   <div class="cc-header-row">
     <div class="cc-title-area">
-      <h2>Credit Cards & Spendings</h2>
-      <p>Keep track of credit card bills, track monthly repayments, and monitor carried-over balances</p>
+      <h2>SBI Credit Card Tracker</h2>
+      <p>Only payments made from and to SBI Credit Card are counted here</p>
     </div>
     <div class="cc-header-actions">
       <button class="btn-primary" id="btn-open-card-pay">✓ Record Payment</button>
       ${summary.closingBalance > 0 ? `<button class="btn-secondary" id="btn-quick-pay-full" style="color:var(--brand)">⚡ Pay in Full (${fmtCurrency(summary.closingBalance, false)})</button>` : ''}
-      <button class="btn-secondary" id="btn-open-card-spend">+ Add Card Spend</button>
-      <button class="btn-secondary" id="btn-open-manage-cards">⚙ Manage Cards</button>
+      <button class="btn-secondary" id="btn-open-card-spend">+ Add SBI Card Spend</button>
     </div>
   </div>
 
   <!-- Card Selector Pill Tabs -->
   <div class="cc-tabs-bar">
-    ${cardTabsHtml}
-    <button class="cc-tab-pill" id="btn-add-new-card-pill" type="button" style="border-style:dashed">
-      <span style="font-weight:700">＋</span> Add Card
-    </button>
+    <span class="cc-tab-pill active">
+      <span class="cc-tab-dot" style="background:#1E56A0"></span>
+      <span class="cc-tab-name">SBI Credit Card (Active)</span>
+      <span class="cc-tab-last4">··9103</span>
+    </span>
   </div>
 
   <!-- Hero Section: Virtual Luxury Card + 4 KPI Cards -->
@@ -4058,26 +4009,26 @@ function mountCreditCards() {
   document.getElementById('btn-quick-pay-full')?.addEventListener('click', async () => {
     const allExpenses = await db.getAll('expenses');
     const allPayments = await getCardPayments();
-    const { current: summary } = calculateCreditCardMonthlySummary(allExpenses, allPayments, state.currentMonth, state.selectedCreditCard);
+    const { current: summary } = calculateCreditCardMonthlySummary(allExpenses, allPayments, state.currentMonth, 'sbi');
     if (summary.closingBalance <= 0) return;
 
-    if (confirm(`Mark entire remaining bill of ${fmtCurrency(summary.closingBalance, true)} as paid for ${monthLabel(state.currentMonth)}?`)) {
+    if (confirm(`Mark entire remaining SBI Card bill of ${fmtCurrency(summary.closingBalance, true)} as paid for ${monthLabel(state.currentMonth)}?`)) {
       await saveCardPayment({
-        cardId: state.selectedCreditCard || 'all',
+        cardId: 'sbi',
         month: state.currentMonth,
         amount: summary.closingBalance,
         date: today(),
-        note: `Full payment for ${monthLabel(state.currentMonth)} bill`
+        note: `Full payment for ${monthLabel(state.currentMonth)} SBI Card bill`
       });
       playAdd();
-      showToast(`Recorded full payment of ${fmtCurrency(summary.closingBalance, true)}!`, 'success');
+      showToast(`Recorded full payment of ${fmtCurrency(summary.closingBalance, true)} for SBI Credit Card!`, 'success');
       renderView();
     }
   });
 
   // Add Card Spend button
   document.getElementById('btn-open-card-spend')?.addEventListener('click', () => {
-    openAddModal({ method: 'Card', cardId: state.selectedCreditCard !== 'all' ? state.selectedCreditCard : 'hdfc' });
+    openAddModal({ method: 'Card', cardId: 'sbi' });
   });
 
   // Delete payment record
@@ -4132,12 +4083,12 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
   modalBody.innerHTML = `
     <div class="add-header">
       <button class="modal-close-btn" id="close-card-pay-btn" type="button">✕</button>
-      <h2>Record Credit Card Payment</h2>
+      <h2>Record SBI Credit Card Payment</h2>
     </div>
 
     <form id="card-pay-form" autocomplete="off">
       <div class="card-pay-context-box">
-        <div class="cp-context-label">Outstanding Bill for <strong>${monthLabel(state.currentMonth)}</strong></div>
+        <div class="cp-context-label">Outstanding Bill for <strong>SBI Credit Card (${monthLabel(state.currentMonth)})</strong></div>
         <div class="cp-context-amount">${fmtCurrency(summary.closingBalance, true)}</div>
       </div>
 
@@ -4163,9 +4114,8 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
         </div>
         <div class="form-group">
           <label class="field-label">Credit Card</label>
-          <select id="cp-card-select" class="field-input">
-            ${cardOptions}
-          </select>
+          <input type="text" value="SBI Credit Card (··9103)" class="field-input" readonly style="opacity:0.9">
+          <input type="hidden" id="cp-card-select" value="sbi">
         </div>
       </div>
 
@@ -4221,13 +4171,12 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
     if (!amount || amount <= 0) return showToast('Enter a valid amount', 'error');
 
     const paymentDate = document.getElementById('cp-date').value;
-    const paymentCardId = document.getElementById('cp-card-select').value;
     const note = document.getElementById('cp-note').value.trim();
     const alsoExpense = document.getElementById('cp-record-expense-chk')?.checked;
     const sourceAccount = document.getElementById('cp-source-account')?.value || 'Slice Savings Account';
 
     await saveCardPayment({
-      cardId: paymentCardId,
+      cardId: 'sbi',
       month: state.currentMonth,
       amount,
       date: paymentDate,
@@ -4235,12 +4184,9 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
     });
 
     if (alsoExpense) {
-      const cardsList = await getCreditCards();
-      const c = cardsList.find(x => x.id === paymentCardId);
-      const cardTitle = c ? c.name : 'Credit Card';
       await db.add('expenses', {
         amount,
-        merchant: `${cardTitle} Bill Payment`,
+        merchant: 'SBI Credit Card Bill Payment',
         category: 'debt',
         date: paymentDate,
         time: formatTimeIST(Date.now()),
@@ -4418,22 +4364,10 @@ async function renderSettings() {
           <span style="width:10px;height:10px;border-radius:50%;background:#1E56A0"></span>
           <div>
             <div style="font-size:13.5px;font-weight:600;color:var(--text)">SBI Credit Card</div>
-            <div style="font-size:11.5px;color:var(--text3)">Credit Card · Bill &amp; Carryover Tracked</div>
+            <div style="font-size:11.5px;color:var(--text3)">Exclusively Counted in Credit Card Tracking &amp; Carryover</div>
           </div>
         </div>
-        <span class="bank-pill bank-sbi-credit-card">Card Debt</span>
-      </div>
-
-      <!-- Slice Credit -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="width:10px;height:10px;border-radius:50%;background:#805AD5"></span>
-          <div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice Credit</div>
-            <div style="font-size:11.5px;color:var(--text3)">Slice Card / Borrow · Bill &amp; Carryover Tracked</div>
-          </div>
-        </div>
-        <span class="bank-pill bank-slice-credit">Card Debt</span>
+        <span class="bank-pill bank-sbi-credit-card">Credit Bill</span>
       </div>
 
       <!-- Slice Savings Account -->
@@ -4442,10 +4376,22 @@ async function renderSettings() {
           <span style="width:10px;height:10px;border-radius:50%;background:#4FD1C5"></span>
           <div>
             <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice Savings Account</div>
-            <div style="font-size:11.5px;color:var(--text3)">Savings Account / UPI · Direct Balance Expense</div>
+            <div style="font-size:11.5px;color:var(--text3)">Savings Account / UPI · Direct Bank Outflow (Not in Credit Bill)</div>
           </div>
         </div>
         <span class="bank-pill bank-slice-savings-account">Savings / UPI</span>
+      </div>
+
+      <!-- Slice Card / Other -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:10px;height:10px;border-radius:50%;background:#805AD5"></span>
+          <div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice / Other Cards</div>
+            <div style="font-size:11.5px;color:var(--text3)">Regular Expenses (Not counted in Credit Card Tracking)</div>
+          </div>
+        </div>
+        <span class="bank-pill bank-slice">Regular Expense</span>
       </div>
 
       <!-- SBI Savings Account -->
@@ -4462,8 +4408,7 @@ async function renderSettings() {
     </div>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn-primary-sm" id="btn-settings-view-cards" type="button">💳 Open Credit Cards Tracker</button>
-      <button class="btn-secondary-sm" id="btn-settings-manage-cards" type="button">⚙ Manage Cards</button>
+      <button class="btn-primary-sm" id="btn-settings-view-cards" type="button">💳 Open SBI Credit Card Tracker</button>
     </div>
   </div>
 

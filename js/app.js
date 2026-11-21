@@ -765,7 +765,7 @@ function isBankName(str, bank = '') {
   if (!str) return false;
   const s = String(str).toLowerCase().trim();
   if (bank && s === String(bank).toLowerCase().trim()) return true;
-  return /^(?:hdfc|hdfc\s+bank|sbi|sbicard|state\s+bank|state\s+bank\s+of\s+india|slice|sliceit|icici|icici\s+bank|union\s+bank|union\s+bank\s+of\s+india|ubi|axis|axis\s+bank|kotak|kotak\s+mahindra|idfc|idfc\s+first|canara|canara\s+bank|pnb|punjab\s+national\s+bank|bob|bank\s+of\s+baroda|indusind|federal\s+bank|yes\s+bank|onecard|bank|bank\s+account|credit\s+card|debit\s+card)\b/i.test(s);
+  return /^(?:hdfc|hdfc\s+bank|sbi|sbicard|sbi\s+card|sbi\s+credit|sbi\s+savings|state\s+bank|state\s+bank\s+of\s+india|slice|sliceit|slice\s+credit|slice\s+savings|slice\s+account|nesfb|icici|icici\s+bank|union\s+bank|union\s+bank\s+of\s+india|ubi|axis|axis\s+bank|kotak|kotak\s+mahindra|idfc|idfc\s+first|canara|canara\s+bank|pnb|punjab\s+national\s+bank|bob|bank\s+of\s+baroda|indusind|federal\s+bank|yes\s+bank|onecard|bank|bank\s+account|credit\s+card|debit\s+card)\b/i.test(s);
 }
 
 const MERCHANT_STOPWORDS = new Set([
@@ -774,9 +774,9 @@ const MERCHANT_STOPWORDS = new Set([
   'support', 'customer support', 'customer care', 'care',
   'digital', 'safety', 'tips', 'safety tips', 'security',
   'customer', 'dear customer', 'valuable customer',
-  'slice', 'sliceit', 'slice debit', 'slice card',
+  'slice', 'sliceit', 'slice debit', 'slice card', 'slice credit', 'slice savings', 'slice account', 'nesfb',
   'hdfc', 'hdfc bank', 'hdfc debit', 'hdfc credit',
-  'sbi', 'sbi card', 'sbi debit', 'sbi upi', 'state bank of india',
+  'sbi', 'sbi card', 'sbi debit', 'sbi upi', 'sbi credit card', 'sbi savings', 'state bank of india',
   'icici', 'icici bank', 'icici debit',
   'union bank', 'union bank of india', 'ubi',
   'axis', 'axis bank', 'kotak', 'idfc', 'canara', 'pnb', 'bob',
@@ -906,19 +906,31 @@ function classifyTransactionDirection(body, subject = '') {
 }
 
 function detectPaymentMethod(body, bank = '') {
+  if (bank === 'SBI Credit Card' || bank === 'Slice Credit' || bank === 'HDFC Credit Card') {
+    return 'Card';
+  }
+  if (bank === 'Slice Savings Account' || bank === 'SBI Savings Account') {
+    if (/neft|imps|rtgs|netbanking|internet\s+banking|funds?\s+transfer|\binb\b/i.test(body)) {
+      return 'Transfer';
+    }
+    if (/debit\s*card/i.test(body)) {
+      return 'Card';
+    }
+    return 'UPI';
+  }
   if (/upi|vpa|@ok[a-z]+|@okhdfcbank|@okaxis|@oksbi|@ybl|@paytm|@ibl|@axl|@apl|@upi|upi\/p2m|upi\/p2a|upi\s*ref/i.test(body)) {
     return 'UPI';
   }
   if (/neft|imps|rtgs|netbanking|internet\s+banking|funds?\s+transfer|\binb\b/i.test(body)) {
     return 'Transfer';
   }
-  if (/credit\s*card|debit\s*card|card\s+ending|\bpos\b|\becom\b|spent\s+on\s+your\s+.*?card/i.test(body)) {
+  if (/credit\s*card|card\s+ending|\bpos\b|\becom\b|spent\s+on\s+your\s+.*?card/i.test(body)) {
     return 'Card';
   }
   if (/atm|cash\s+withdrawal/i.test(body)) {
     return 'Cash';
   }
-  if (/slice/i.test(bank)) {
+  if (/slice\s+credit/i.test(bank)) {
     return 'Card';
   }
   return 'UPI';
@@ -1033,11 +1045,23 @@ function detectBank(from = '', subject = '', body = '') {
   const b = (body || '').toLowerCase();
 
   // 1. Check sender address first (most authoritative)
-  if (f.includes('hdfc')) return 'HDFC';
-  if (f.includes('sbi') || f.includes('sbicard')) return 'SBI';
+  if (f.includes('sbicard')) return 'SBI Credit Card';
+  if (f.includes('sbi')) {
+    if (sub.includes('card') || b.includes('card') || b.includes('credit') || sub.includes('credit')) return 'SBI Credit Card';
+    return 'SBI Savings Account';
+  }
+  if (f.includes('hdfc')) {
+    if (sub.includes('credit card') || b.includes('credit card')) return 'HDFC Credit Card';
+    return 'HDFC Bank';
+  }
+  if (f.includes('sliceit') || f.includes('slice')) {
+    if (b.includes('slice account') || b.includes('slice savings') || b.includes('savings a/c') || b.includes('nesfb') || (b.includes('upi') && !b.includes('borrow') && !b.includes('card ending') && !b.includes('slice card'))) {
+      return 'Slice Savings Account';
+    }
+    return 'Slice Credit';
+  }
   if (f.includes('icici')) return 'ICICI';
   if (f.includes('unionbank') || f.includes('ubi')) return 'Union Bank';
-  if (f.includes('sliceit') || f.includes('slice')) return 'Slice';
   if (f.includes('axis')) return 'Axis';
   if (f.includes('kotak')) return 'Kotak';
   if (f.includes('idfc')) return 'IDFC FIRST';
@@ -1049,13 +1073,30 @@ function detectBank(from = '', subject = '', body = '') {
   if (f.includes('federalbank')) return 'Federal Bank';
   if (f.includes('yesbank')) return 'Yes Bank';
 
-  // 2. Check subject line & body
+  // 2. Check subject line & body for SBI & Slice
+  if (sub.includes('sbicard') || (sub.includes('sbi') && (sub.includes('card') || sub.includes('credit')))) return 'SBI Credit Card';
+  if (sub.includes('sbi') || sub.includes('state bank')) return 'SBI Savings Account';
+  if (b.includes('sbicard') || b.includes('sbi card') || b.includes('sbi credit card')) return 'SBI Credit Card';
+  if (b.includes('state bank') || b.includes('sbi account') || b.includes('sbi upi')) return 'SBI Savings Account';
+
+  if (sub.includes('slice')) {
+    if (sub.includes('account') || sub.includes('savings') || b.includes('slice account') || b.includes('slice savings') || b.includes('nesfb') || (b.includes('upi') && !b.includes('card ending') && !b.includes('borrow') && !b.includes('slice card'))) {
+      return 'Slice Savings Account';
+    }
+    return 'Slice Credit';
+  }
+  if (b.includes('slice')) {
+    if (b.includes('slice account') || b.includes('slice savings') || b.includes('nesfb') || (b.includes('upi') && !b.includes('borrow') && !b.includes('card ending') && !b.includes('credit limit') && !b.includes('slice card'))) {
+      return 'Slice Savings Account';
+    }
+    return 'Slice Credit';
+  }
+
+  // 3. Other bank checks
   const checkStr = (s) => {
-    if (s.includes('hdfc')) return 'HDFC';
-    if (s.includes('state bank') || s.includes('sbi') || s.includes('sbicard')) return 'SBI';
+    if (s.includes('hdfc')) return 'HDFC Bank';
     if (s.includes('icici')) return 'ICICI';
     if (s.includes('union bank') || s.includes('ubi')) return 'Union Bank';
-    if (s.includes('slice')) return 'Slice';
     if (s.includes('axis')) return 'Axis';
     if (s.includes('kotak')) return 'Kotak';
     if (s.includes('idfc')) return 'IDFC FIRST';
@@ -1210,7 +1251,18 @@ async function parseBankEmail(body, emailDateMs = Date.now(), subject = '', from
     }
   }
 
-  return { amount, merchant, date, time, method, refNo, bank, type };
+  let cardId = null;
+  if (bank === 'SBI Credit Card') cardId = 'sbi';
+  else if (bank === 'Slice Credit') cardId = 'slice';
+  else if (bank === 'HDFC Credit Card') cardId = 'hdfc';
+  else if (method === 'Card') {
+    if (/sbi/i.test(bank)) cardId = 'sbi';
+    else if (/slice/i.test(bank)) cardId = 'slice';
+    else if (/hdfc/i.test(bank)) cardId = 'hdfc';
+    else if (/icici/i.test(bank)) cardId = 'icici';
+  }
+
+  return { amount, merchant, date, time, method, refNo, bank, type, cardId };
 }
 
 function parseHdfcEmail(body, emailDateMs) {
@@ -1300,6 +1352,8 @@ function showGmailPreview(transactions, importedRefs) {
         category,
         method: t.method || 'UPI',
         type: t.type || 'debit',
+        bank: t.bank || '',
+        cardId: t.cardId || null,
         note: noteParts.join(' · '),
         createdAt: Date.now()
       };
@@ -1344,7 +1398,7 @@ async function gmailDoSync(silent = false) {
     const geminiApiKey = await db.getSetting('gemini_api_key', '');
     await db.setSetting('gmail_last_sync', null); // clear stale value so it never interferes
     const afterStr = startDate.replace(/-/g, '/');
-    const query = `{from:hdfc from:sbi from:icici from:unionbank from:slice from:axis from:kotak debited spent deducted "debit alert" "transaction alert" "paid to" "transferred to" credited refund cashback} after:${afterStr}`;
+    const query = `{from:hdfc from:sbi from:sbicard from:icici from:unionbank from:slice from:axis from:kotak debited spent deducted "debit alert" "transaction alert" "paid to" "transferred to" credited refund cashback} after:${afterStr}`;
 
     // Fetch all pages
     const allMessages = [];
@@ -2497,13 +2551,25 @@ function renderAddForm(editData = null) {
     <div id="card-select-group" style="display:${(e.method || 'UPI') === 'Card' ? 'block' : 'none'};margin-bottom:14px">
       <label class="field-label">Charged to Credit Card</label>
       <select id="f-card-id" class="field-input">
-        <option value="all">General / Default Card</option>
+        <option value="sbi" ${(e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi card') || (e.bank || '').toLowerCase() === 'sbi') ? 'selected' : ''}>SBI Credit Card</option>
+        <option value="slice" ${(e.cardId === 'slice' || (e.bank || '').toLowerCase().includes('slice credit') || (e.bank || '').toLowerCase() === 'slice') ? 'selected' : ''}>Slice Credit</option>
         <option value="hdfc" ${(e.cardId === 'hdfc' || (e.bank || '').toLowerCase().includes('hdfc')) ? 'selected' : ''}>HDFC Credit Card</option>
-        <option value="slice" ${(e.cardId === 'slice' || (e.bank || '').toLowerCase().includes('slice')) ? 'selected' : ''}>Slice Card</option>
-        <option value="sbi" ${(e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi')) ? 'selected' : ''}>SBI Card</option>
         <option value="icici" ${(e.cardId === 'icici' || (e.bank || '').toLowerCase().includes('icici')) ? 'selected' : ''}>ICICI Amazon Pay</option>
         <option value="axis" ${(e.cardId === 'axis' || (e.bank || '').toLowerCase().includes('axis')) ? 'selected' : ''}>Axis Bank Card</option>
         <option value="onecard" ${(e.cardId === 'onecard' || (e.bank || '').toLowerCase().includes('onecard')) ? 'selected' : ''}>OneCard</option>
+        <option value="all">General / Other Card</option>
+      </select>
+    </div>
+
+    <!-- Account Selection (shown when Method is UPI, Transfer, NetBanking, or Cash) -->
+    <div id="account-select-group" style="display:${(e.method || 'UPI') !== 'Card' ? 'block' : 'none'};margin-bottom:14px">
+      <label class="field-label" id="account-field-label">${currentType === 'credit' ? 'Deposited Into Account' : 'Paid From Account / Bank'}</label>
+      <select id="f-account-id" class="field-input">
+        <option value="Slice Savings Account" ${(e.bank || '').toLowerCase().includes('slice savings') || (e.bank || '').toLowerCase().includes('slice account') ? 'selected' : ''}>Slice Savings Account</option>
+        <option value="SBI Savings Account" ${(e.bank || '').toLowerCase().includes('sbi savings') || (e.bank || '').toLowerCase().includes('sbi account') ? 'selected' : ''}>SBI Savings Account</option>
+        <option value="HDFC Bank" ${(e.bank || '').toLowerCase().includes('hdfc') && !(e.bank || '').toLowerCase().includes('credit') ? 'selected' : ''}>HDFC Bank</option>
+        <option value="Cash" ${(e.bank || '').toLowerCase().includes('cash') ? 'selected' : ''}>Cash / Wallet</option>
+        <option value="Other Bank" ${(!e.bank || (e.bank !== 'Slice Savings Account' && e.bank !== 'SBI Savings Account' && e.bank !== 'HDFC Bank' && e.bank !== 'Cash')) ? 'selected' : ''}>Other Bank / Account</option>
       </select>
     </div>
 
@@ -2535,6 +2601,7 @@ function mountAddForm(modalMode = false) {
 
       const submitBtn = document.getElementById('btn-submit-add');
       const merchantLabel = document.getElementById('merchant-field-label');
+      const accountLabel = document.getElementById('account-field-label');
       const merchantInput = document.getElementById('f-merchant');
 
       if (submitBtn) {
@@ -2544,6 +2611,9 @@ function mountAddForm(modalMode = false) {
       }
       if (merchantLabel) {
         merchantLabel.textContent = selectedType === 'credit' ? 'Sender / Source' : 'Merchant / Payee';
+      }
+      if (accountLabel) {
+        accountLabel.textContent = selectedType === 'credit' ? 'Deposited Into Account' : 'Paid From Account / Bank';
       }
       if (merchantInput) {
         merchantInput.placeholder = selectedType === 'credit'
@@ -2581,8 +2651,12 @@ function mountAddForm(modalMode = false) {
       el.classList.add('active');
       selectedMethod = el.dataset.method;
       const cardGroup = document.getElementById('card-select-group');
+      const acctGroup = document.getElementById('account-select-group');
       if (cardGroup) {
         cardGroup.style.display = selectedMethod === 'Card' ? 'block' : 'none';
+      }
+      if (acctGroup) {
+        acctGroup.style.display = selectedMethod === 'Card' ? 'none' : 'block';
       }
     });
   });
@@ -2649,12 +2723,21 @@ function mountAddForm(modalMode = false) {
     if (selectedMethod === 'Card') {
       const cid = document.getElementById('f-card-id')?.value || 'all';
       expense.cardId = cid;
-      if (cid === 'hdfc') expense.bank = 'HDFC';
-      else if (cid === 'slice') expense.bank = 'Slice';
-      else if (cid === 'sbi') expense.bank = 'SBI';
-      else if (cid === 'icici') expense.bank = 'ICICI';
-      else if (cid === 'axis') expense.bank = 'Axis';
+      if (cid === 'sbi') expense.bank = 'SBI Credit Card';
+      else if (cid === 'slice') expense.bank = 'Slice Credit';
+      else if (cid === 'hdfc') expense.bank = 'HDFC Credit Card';
+      else if (cid === 'icici') expense.bank = 'ICICI Amazon Pay';
+      else if (cid === 'axis') expense.bank = 'Axis Bank Card';
       else if (cid === 'onecard') expense.bank = 'OneCard';
+      else expense.bank = 'Credit Card';
+    } else {
+      expense.cardId = null;
+      const acct = document.getElementById('f-account-id')?.value;
+      if (acct && acct !== 'Other Bank') {
+        expense.bank = acct;
+      } else if (selectedMethod === 'Cash') {
+        expense.bank = 'Cash';
+      }
     }
 
     if (state.editingExpense?.id) {
@@ -3411,9 +3494,9 @@ async function mountBudgets() {
 // ─── Credit Cards & Bill Tracking ─────────────────────────────────────────────
 const DEFAULT_CREDIT_CARDS = [
   { id: 'all', name: 'All Cards', bank: 'All Cards', last4: '', color: '#D99B84' },
+  { id: 'sbi', name: 'SBI Credit Card', bank: 'SBI Card', last4: '9103', color: '#1E56A0', billingDay: 18, dueDay: 8 },
+  { id: 'slice', name: 'Slice Credit', bank: 'Slice Credit', last4: '5621', color: '#805AD5', billingDay: 1, dueDay: 20 },
   { id: 'hdfc', name: 'HDFC Credit Card', bank: 'HDFC', last4: '8842', color: '#3182CE', billingDay: 15, dueDay: 5 },
-  { id: 'slice', name: 'Slice Card', bank: 'Slice', last4: '5621', color: '#805AD5', billingDay: 1, dueDay: 20 },
-  { id: 'sbi', name: 'SBI Card', bank: 'SBI', last4: '9103', color: '#2B6CB0', billingDay: 18, dueDay: 8 },
   { id: 'icici', name: 'ICICI Amazon Pay', bank: 'ICICI', last4: '3412', color: '#DD6B20', billingDay: 10, dueDay: 30 },
   { id: 'axis', name: 'Axis Bank Card', bank: 'Axis', last4: '7729', color: '#9B2C2C', billingDay: 12, dueDay: 2 },
   { id: 'onecard', name: 'OneCard', bank: 'OneCard', last4: '6018', color: '#4A5568', billingDay: 25, dueDay: 15 }
@@ -3421,7 +3504,13 @@ const DEFAULT_CREDIT_CARDS = [
 
 async function getCreditCards() {
   const custom = await db.getSetting('credit_cards', null);
-  if (Array.isArray(custom) && custom.length > 0) return custom;
+  if (Array.isArray(custom) && custom.length > 0) {
+    return custom.map(c => {
+      if (c.id === 'slice' && c.name === 'Slice Card') return { ...c, name: 'Slice Credit', bank: 'Slice Credit' };
+      if (c.id === 'sbi' && c.name === 'SBI Card') return { ...c, name: 'SBI Credit Card', bank: 'SBI Card', color: '#1E56A0' };
+      return c;
+    });
+  }
   return DEFAULT_CREDIT_CARDS;
 }
 
@@ -3460,11 +3549,32 @@ async function deleteCardPayment(id) {
 
 function isCreditCardExpense(e) {
   if (!e || e.type === 'credit') return false;
-  if (e.method === 'Card') return true;
-  if (e.cardId && e.cardId !== 'none') return true;
+
   const b = (e.bank || '').toLowerCase();
   const n = (e.note || '').toLowerCase();
-  if (b.includes('slice') || b.includes('card') || n.includes('credit card') || n.includes('slice')) return true;
+
+  // 1. Explicitly exclude Savings Accounts (Slice Savings, SBI Savings, bank accounts)
+  if (b.includes('slice savings') || b.includes('slice account') || n.includes('slice savings') || n.includes('slice account')) {
+    return false;
+  }
+  if (b.includes('sbi savings') || b.includes('sbi account') || n.includes('sbi savings') || n.includes('sbi account')) {
+    return false;
+  }
+
+  // 2. Explicit Credit Card ID assigned
+  if (e.cardId && e.cardId !== 'none') return true;
+
+  // 3. Payment Method is Card
+  if (e.method === 'Card') return true;
+
+  // 4. Note or Bank explicitly specifies Credit Card / Slice Credit / SBI Card
+  if (b.includes('credit card') || b.includes('slice credit') || b.includes('sbi card') || b.includes('sbicard')) return true;
+  if (n.includes('credit card') || n.includes('slice credit') || n.includes('sbi card') || n.includes('sbicard')) return true;
+
+  // 5. If method is UPI, Transfer, Cash, or NetBanking without cardId, it is savings/bank debit
+  if (e.method === 'UPI' || e.method === 'Transfer' || e.method === 'Cash' || e.method === 'NetBanking') return false;
+
+  if (b.includes('card') || n.includes('card')) return true;
   return false;
 }
 
@@ -3472,9 +3582,16 @@ function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth
   const cardExpenses = allExpenses.filter(e => {
     if (!isCreditCardExpense(e)) return false;
     if (targetCardId && targetCardId !== 'all') {
+      const tid = targetCardId.toLowerCase();
+      if (tid === 'slice') {
+        return e.cardId === 'slice' || (e.bank && e.bank.toLowerCase().includes('slice credit')) || (e.note && e.note.toLowerCase().includes('slice credit'));
+      }
+      if (tid === 'sbi') {
+        return e.cardId === 'sbi' || (e.bank && e.bank.toLowerCase().includes('sbi')) || (e.note && e.note.toLowerCase().includes('sbi card'));
+      }
       const match = (e.cardId && e.cardId === targetCardId) ||
-                    (e.bank && e.bank.toLowerCase().includes(targetCardId.toLowerCase())) ||
-                    (e.note && e.note.toLowerCase().includes(targetCardId.toLowerCase()));
+                    (e.bank && e.bank.toLowerCase().includes(tid)) ||
+                    (e.note && e.note.toLowerCase().includes(tid));
       return match;
     }
     return true;
@@ -4053,12 +4170,22 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
       </div>
 
       <label class="field-label">Note / Payment Method (optional)</label>
-      <input type="text" id="cp-note" placeholder="e.g. Paid via HDFC NetBanking, Cred, UPI" class="field-input">
+      <input type="text" id="cp-note" placeholder="e.g. Paid via Slice Savings Account, SBI UPI, Cred" class="field-input">
 
-      <label class="form-check-label" style="display:flex;align-items:center;gap:8px;margin:14px 0 18px;cursor:pointer;font-size:13px;color:var(--text2)">
+      <label class="form-check-label" style="display:flex;align-items:center;gap:8px;margin:14px 0 10px;cursor:pointer;font-size:13px;color:var(--text2)">
         <input type="checkbox" id="cp-record-expense-chk" checked style="accent-color:var(--brand);width:16px;height:16px">
         <span>Also log as an expense under Debt Repayment (deducts from bank balance)</span>
       </label>
+
+      <div id="cp-source-account-row" style="margin-bottom:14px">
+        <label class="field-label">Paid From Account (Debit Source)</label>
+        <select id="cp-source-account" class="field-input">
+          <option value="Slice Savings Account">Slice Savings Account</option>
+          <option value="SBI Savings Account">SBI Savings Account</option>
+          <option value="HDFC Bank">HDFC Bank</option>
+          <option value="Bank Account">Other Bank Account</option>
+        </select>
+      </div>
 
       <button type="submit" class="btn-primary" style="width:100%" id="cp-submit-btn">✓ Save Payment</button>
     </form>
@@ -4070,6 +4197,11 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
   const modalEl = document.getElementById('card-pay-modal');
   modalEl._backdropHandler = e => { if (e.target === modalEl) closeModal('card-pay-modal'); };
   modalEl.addEventListener('click', modalEl._backdropHandler);
+
+  document.getElementById('cp-record-expense-chk')?.addEventListener('change', e => {
+    const row = document.getElementById('cp-source-account-row');
+    if (row) row.style.display = e.target.checked ? 'block' : 'none';
+  });
 
   // Quick preset chips
   modalBody.querySelectorAll('.quick-amt-chip[data-amt]').forEach(chip => {
@@ -4092,6 +4224,7 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
     const paymentCardId = document.getElementById('cp-card-select').value;
     const note = document.getElementById('cp-note').value.trim();
     const alsoExpense = document.getElementById('cp-record-expense-chk')?.checked;
+    const sourceAccount = document.getElementById('cp-source-account')?.value || 'Slice Savings Account';
 
     await saveCardPayment({
       cardId: paymentCardId,
@@ -4113,6 +4246,7 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
         time: formatTimeIST(Date.now()),
         month: dateToMonth(paymentDate),
         method: 'Transfer',
+        bank: sourceAccount,
         type: 'debit',
         note: `Credit card bill payment: ${note || monthLabel(state.currentMonth)}`.trim(),
         createdAt: Date.now()
@@ -4263,6 +4397,73 @@ async function renderSettings() {
         <input type="checkbox" id="smart-cat-toggle" ${smartCat ? 'checked' : ''}>
         <span class="toggle-slider"></span>
       </label>
+    </div>
+  </div>
+
+  <!-- Cards & Accounts Overview -->
+  <div class="settings-section card">
+    <div class="settings-section-title">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px">
+        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+        <line x1="2" y1="10" x2="22" y2="10"></line>
+      </svg>
+      Cards &amp; Accounts
+    </div>
+    <p class="hint-text" style="margin-bottom:12px">Your primary payment cards and linked banking accounts.</p>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <!-- SBI Credit Card -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:10px;height:10px;border-radius:50%;background:#1E56A0"></span>
+          <div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--text)">SBI Credit Card</div>
+            <div style="font-size:11.5px;color:var(--text3)">Credit Card · Bill &amp; Carryover Tracked</div>
+          </div>
+        </div>
+        <span class="bank-pill bank-sbi-credit-card">Card Debt</span>
+      </div>
+
+      <!-- Slice Credit -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:10px;height:10px;border-radius:50%;background:#805AD5"></span>
+          <div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice Credit</div>
+            <div style="font-size:11.5px;color:var(--text3)">Slice Card / Borrow · Bill &amp; Carryover Tracked</div>
+          </div>
+        </div>
+        <span class="bank-pill bank-slice-credit">Card Debt</span>
+      </div>
+
+      <!-- Slice Savings Account -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:10px;height:10px;border-radius:50%;background:#4FD1C5"></span>
+          <div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice Savings Account</div>
+            <div style="font-size:11.5px;color:var(--text3)">Savings Account / UPI · Direct Balance Expense</div>
+          </div>
+        </div>
+        <span class="bank-pill bank-slice-savings-account">Savings / UPI</span>
+      </div>
+
+      <!-- SBI Savings Account -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:10px;height:10px;border-radius:50%;background:#3B82F6"></span>
+          <div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--text)">SBI Savings Account</div>
+            <div style="font-size:11.5px;color:var(--text3)">State Bank of India · Direct Balance Expense</div>
+          </div>
+        </div>
+        <span class="bank-pill bank-sbi-savings-account">Savings / UPI</span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn-primary-sm" id="btn-settings-view-cards" type="button">💳 Open Credit Cards Tracker</button>
+      <button class="btn-secondary-sm" id="btn-settings-manage-cards" type="button">⚙ Manage Cards</button>
     </div>
   </div>
 
@@ -4417,6 +4618,14 @@ function mountSettings() {
     await db.setSetting('gmail_hint', null);
     showToast('Gmail disconnected');
     renderView();
+  });
+
+  // Cards & Accounts buttons in settings
+  document.getElementById('btn-settings-view-cards')?.addEventListener('click', () => {
+    setView('cards');
+  });
+  document.getElementById('btn-settings-manage-cards')?.addEventListener('click', () => {
+    openCardManageModal();
   });
 
   // Sound toggle in settings

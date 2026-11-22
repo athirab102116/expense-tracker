@@ -28,7 +28,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=73">
+  <link rel="stylesheet" href="css/app.css?v=75">
 </head>
 <body>
   <div id="app">
@@ -103,6 +103,16 @@
             </svg>
           </span>
           <span class="nav-label">Budgets</span>
+        </button>
+
+        <button class="nav-item" data-view="gatekeeper" aria-label="Gatekeeper" data-tooltip="Gatekeeper">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Gatekeeper</span>
+          <span class="nav-badge-pill" id="sidebar-gk-badge" style="display:none">0</span>
         </button>
 
         <button class="nav-item" data-view="cards" aria-label="Credit Cards" data-tooltip="Credit Cards">
@@ -258,6 +268,13 @@
         <span>Budgets</span>
       </button>
 
+      <button class="mobile-nav-item" data-view="gatekeeper" aria-label="Gatekeeper">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+        <span>Gatekeeper</span>
+      </button>
+
       <button class="mobile-nav-item" data-view="settings" aria-label="Settings">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
@@ -330,6 +347,14 @@
     </div>
   </div>
 
+  <!-- Purchase Gatekeeper (Log Impulse) Modal -->
+  <div class="modal" id="gatekeeper-modal">
+    <div class="modal-sheet modal-sheet-lg">
+      <div class="modal-handle"></div>
+      <div id="gatekeeper-modal-body"></div>
+    </div>
+  </div>
+
   <!-- Google Identity Services (for Gmail OAuth) -->
   <script src="https://accounts.google.com/gsi/client"></script>
   <!-- Chart.js (bundled locally) -->
@@ -337,14 +362,17 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=73"></script>
+  <script type="module" src="js/app.js?v=75"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=73')
-          .then(r => console.log('SW registered:', r.scope))
+        navigator.serviceWorker.register('sw.js?v=75')
+          .then(r => {
+            console.log('SW registered:', r.scope);
+            r.update();
+          })
           .catch(e => console.log('SW registration failed:', e));
       });
     }

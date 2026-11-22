@@ -1,6 +1,14 @@
 import { db } from './db.js';
 import { DEFAULT_CATEGORIES, DEFAULT_MERCHANT_RULES } from './categories.js';
 import { playAdd, playDelete, playNav, playBudgetWarn, toggleSound, playCategorySound } from './audio.js';
+import {
+  initGatekeeper,
+  renderGatekeeper,
+  mountGatekeeper,
+  openLogImpulseModal,
+  updateGatekeeperBadge,
+  getGatekeeperItems
+} from './gatekeeper.js';
 
 let _particlesRAF = null;
 
@@ -375,9 +383,10 @@ async function gistSync() {
   _syncTimer = setTimeout(async () => {
     const el = document.getElementById('gist-sync-status');
     try {
-      const [expenses, categories, budgets, merchantRules] = await Promise.all([
+      const [expenses, categories, budgets, merchantRules, gatekeeper] = await Promise.all([
         db.getAll('expenses'), db.getAll('categories'),
         db.getAll('budgets'), db.getAll('merchant_rules'),
+        db.getAll('gatekeeper').catch(() => []),
       ]);
       const learnedMerchants = await db.getSetting('learned_merchants', {});
       const pendingMerchants = await db.getSetting('pending_merchants', {});
@@ -385,9 +394,9 @@ async function gistSync() {
       const creditCardPayments = await db.getSetting('credit_card_payments', []);
 
       const payload = JSON.stringify({
-        version: 2, syncedAt: Date.now(),
+        version: 3, syncedAt: Date.now(),
         expenses, categories, budgets, merchantRules, learnedMerchants, pendingMerchants,
-        creditCards, creditCardPayments
+        creditCards, creditCardPayments, gatekeeper
       });
 
       const gistId = await _resolveGistId(token);
@@ -467,6 +476,10 @@ async function loadFromGist() {
     if (data.merchantRules?.length) {
       await db.clearStore('merchant_rules');
       for (const r of data.merchantRules) await db.add('merchant_rules', r);
+    }
+    if (data.gatekeeper?.length) {
+      await db.clearStore('gatekeeper').catch(() => {});
+      for (const g of data.gatekeeper) await db.put('gatekeeper', g).catch(() => {});
     }
     if (data.learnedMerchants) await db.setSetting('learned_merchants', data.learnedMerchants);
     if (data.pendingMerchants) await db.setSetting('pending_merchants', data.pendingMerchants);
@@ -1529,6 +1542,71 @@ async function bootstrap() {
   state.categories = await db.getAll('categories');
   state.merchantRules = await db.getAll('merchant_rules');
 
+  // Seed initial Gatekeeper sample items if store is empty
+  try {
+    const gkItems = await db.getAll('gatekeeper');
+    if (!gkItems || gkItems.length === 0) {
+      const nowMs = Date.now();
+      const sampleGk = [
+        {
+          id: 'gk-sample-1',
+          name: 'Sony WH-1000XM5 Noise-Cancelling Headphones',
+          price: 19990,
+          gatekeeperCategory: 'Core Upgrade',
+          budgetCategory: 'Shopping',
+          coolingHours: 48,
+          createdAt: new Date(nowMs - 16 * 3600 * 1000).toISOString(),
+          unlockAt: new Date(nowMs + 32 * 3600 * 1000).toISOString(),
+          utilityScore: 85,
+          answers: {
+            frequency: 'Daily (+25)',
+            redundancy: 'Upgrade (+10)',
+            trigger: 'Planned (+25)',
+            fit: 'Easy (+25)'
+          },
+          status: 'cooling'
+        },
+        {
+          id: 'gk-sample-2',
+          name: 'Limited Edition Streetwear Vintage Hoodie',
+          price: 4499,
+          gatekeeperCategory: 'Pure Dopamine / Treat',
+          budgetCategory: 'Shopping',
+          coolingHours: 48,
+          createdAt: new Date(nowMs - 50 * 3600 * 1000).toISOString(),
+          unlockAt: new Date(nowMs - 2 * 3600 * 1000).toISOString(),
+          utilityScore: 35,
+          answers: {
+            frequency: 'Weekly (+15)',
+            redundancy: 'Duplicate (-10)',
+            trigger: 'Feed/Ad (0)',
+            fit: 'Tight (+10)'
+          },
+          status: 'ready'
+        },
+        {
+          id: 'gk-sample-3',
+          name: 'Ambient Warm Desk Flame Diffuser',
+          price: 2199,
+          gatekeeperCategory: 'Aesthetic / Lifestyle',
+          budgetCategory: 'Shopping',
+          coolingHours: 48,
+          createdAt: new Date(nowMs - 96 * 3600 * 1000).toISOString(),
+          unlockAt: new Date(nowMs - 48 * 3600 * 1000).toISOString(),
+          utilityScore: 25,
+          answers: {
+            frequency: 'Rare (+5)',
+            redundancy: 'No (+25)',
+            trigger: 'Stress/Bored (-5)',
+            fit: 'Stretch (-10)'
+          },
+          status: 'let_go'
+        }
+      ];
+      for (const g of sampleGk) await db.put('gatekeeper', g);
+    }
+  } catch (_) {}
+
   // Smart active month selection:
   // If current month has 0 transactions but an earlier/later month has transactions,
   // open to the latest month that actually has data!
@@ -1598,6 +1676,69 @@ async function loadDemoData() {
   ];
   for (const b of budgets) await db.put('budgets', b);
 
+  // Sample Gatekeeper items
+  const nowMs = Date.now();
+  const sampleGk = [
+    {
+      id: 'demo-gk-1',
+      name: 'Sony WH-1000XM5 Noise-Cancelling Headphones',
+      price: 19990,
+      gatekeeperCategory: 'Core Upgrade',
+      budgetCategory: 'Shopping',
+      coolingHours: 48,
+      createdAt: new Date(nowMs - 16 * 3600 * 1000).toISOString(),
+      unlockAt: new Date(nowMs + 32 * 3600 * 1000).toISOString(),
+      utilityScore: 85,
+      answers: {
+        frequency: 'Daily (+25)',
+        redundancy: 'Upgrade (+10)',
+        trigger: 'Planned (+25)',
+        fit: 'Easy (+25)'
+      },
+      status: 'cooling'
+    },
+    {
+      id: 'demo-gk-2',
+      name: 'Limited Streetwear Vintage Oversized Hoodie',
+      price: 4499,
+      gatekeeperCategory: 'Pure Dopamine / Treat',
+      budgetCategory: 'Shopping',
+      coolingHours: 48,
+      createdAt: new Date(nowMs - 50 * 3600 * 1000).toISOString(),
+      unlockAt: new Date(nowMs - 2 * 3600 * 1000).toISOString(),
+      utilityScore: 35,
+      answers: {
+        frequency: 'Weekly (+15)',
+        redundancy: 'Duplicate (-10)',
+        trigger: 'Feed/Ad (0)',
+        fit: 'Tight (+10)'
+      },
+      status: 'ready'
+    },
+    {
+      id: 'demo-gk-3',
+      name: 'Ambient Warm Desk Flame Diffuser',
+      price: 2199,
+      gatekeeperCategory: 'Aesthetic / Lifestyle',
+      budgetCategory: 'Shopping',
+      coolingHours: 48,
+      createdAt: new Date(nowMs - 96 * 3600 * 1000).toISOString(),
+      unlockAt: new Date(nowMs - 48 * 3600 * 1000).toISOString(),
+      utilityScore: 25,
+      answers: {
+        frequency: 'Rare (+5)',
+        redundancy: 'No (+25)',
+        trigger: 'Stress/Bored (-5)',
+        fit: 'Stretch (-10)'
+      },
+      status: 'let_go'
+    }
+  ];
+  for (const gk of sampleGk) {
+    try { await db.put('gatekeeper', gk); } catch (_) {}
+  }
+  updateGatekeeperBadge();
+
   await db.setSetting('demo_loaded', true);
   state.currentMonth = curYm;
   showToast('Sample data loaded successfully!');
@@ -1620,6 +1761,11 @@ async function clearDemoData() {
     ['food','groceries','transport','entertainment'].includes(b.categoryId)
   );
   for (const b of demoBudgets) await db.delete('budgets', b.id);
+
+  for (const id of ['demo-gk-1', 'demo-gk-2', 'demo-gk-3']) {
+    try { await db.delete('gatekeeper', id); } catch (_) {}
+  }
+  updateGatekeeperBadge();
 
   await db.setSetting('demo_loaded', false);
   showToast(`Removed ${demoIds.length} demo entries`);
@@ -1670,7 +1816,7 @@ async function handleURLParams() {
 function updateHeaderState() {
   const titleEl = document.getElementById('header-view-title');
   if (titleEl) {
-    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', cards: 'SBI Credit Card', settings: 'Settings' };
+    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', cards: 'SBI Credit Card', settings: 'Settings', gatekeeper: 'Gatekeeper' };
     titleEl.textContent = map[state.view] || 'Dashboard';
   }
   const monthEl = document.getElementById('header-month-label');
@@ -1725,6 +1871,17 @@ async function renderView() {
         state.barChart = null;
       }
     }
+    initGatekeeper({
+      categories: state.categories,
+      showToast,
+      openModal,
+      closeModal,
+      fmt,
+      today,
+      renderView,
+      gistSync
+    });
+
     switch (state.view) {
       case 'dashboard':    main.innerHTML = await renderDashboard(); await mountDashboard(); break;
       case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
@@ -1732,6 +1889,7 @@ async function renderView() {
       case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
       case 'cards':        main.innerHTML = await renderCreditCards(); mountCreditCards(); break;
       case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
+      case 'gatekeeper':   main.innerHTML = await renderGatekeeper(); mountGatekeeper(); break;
     }
   } catch (err) {
     console.error('renderView error:', err);
@@ -1831,6 +1989,15 @@ async function renderDashboard() {
   const allExpenses = await db.getAll('expenses');
   const expenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === month);
   const prevExpenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === prevMonth);
+
+  // Purchase Gatekeeper metrics
+  let gkItems = [];
+  try { gkItems = await getGatekeeperItems(); } catch (_) {}
+  const gkLetGo = gkItems.filter(i => i.status === 'let_go');
+  const gkTotalSaved = gkLetGo.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  const gkCooling = gkItems.filter(i => i.status === 'cooling');
+  const gkCoolingAmt = gkCooling.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  const gkReady = gkItems.filter(i => i.status === 'ready');
 
   // Fetch budgets to set Total Income as Total Budgeted Amount (fallback to credits if none exist)
   const allBudgets = await db.getAll('budgets');
@@ -2160,6 +2327,53 @@ async function renderDashboard() {
   </div>`;
   })()}
 
+  <!-- Purchase Gatekeeper Dashboard Section -->
+  <div class="dashboard-card" style="margin-top:20px" id="dash-gatekeeper-section">
+    <div class="card-header-row">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:18px">
+          🛡️
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="card-heading">Purchase Gatekeeper</span>
+            <span class="gk-status-badge status-cooling" style="font-size:11px">Cooling-Off Queue</span>
+            ${gkReady.length > 0 ? `<span class="gk-status-badge status-ready" style="font-size:11px">🔔 ${gkReady.length} Ready</span>` : ''}
+          </div>
+          <div class="card-subheading">Cooling-off queue &amp; utility evaluation to curb impulse spending</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-primary" id="dash-log-impulse-btn" style="font-size:12px;padding:6px 14px" title="Log an impulse purchase into the cooling queue">
+          + Log Impulse
+        </button>
+        <button class="btn-secondary" id="dash-view-gk-btn" style="font-size:12px;padding:6px 14px" title="View full Gatekeeper view">
+          Gatekeeper Queue (${gkItems.length}) →
+        </button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:14px;margin-top:16px">
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Resisted Impulses (Saved)</div>
+        <div style="font-size:18px;font-weight:700;color:var(--income)">${fmt(gkTotalSaved)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkLetGo.length} impulse${gkLetGo.length !== 1 ? 's' : ''} avoided</div>
+      </div>
+
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Cooling Off Now</div>
+        <div style="font-size:18px;font-weight:700;color:var(--gold)">${fmt(gkCoolingAmt)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkCooling.length} item${gkCooling.length !== 1 ? 's' : ''} in cooling buffer</div>
+      </div>
+
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Ready for Decision</div>
+        <div style="font-size:18px;font-weight:700;color:var(--brand)">${gkReady.length}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkReady.length > 0 ? '✨ 48h cool-off complete' : 'All cooled off'}</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Recent Transactions Card -->
   <div class="dashboard-card" style="margin-top:20px">
     <div class="card-header-row">
@@ -2219,6 +2433,8 @@ async function mountDashboard() {
   // Event handlers
   document.getElementById('dash-view-all-txns')?.addEventListener('click', () => setView('transactions'));
   document.getElementById('dash-view-all-txns-link')?.addEventListener('click', () => setView('transactions'));
+  document.getElementById('dash-log-impulse-btn')?.addEventListener('click', () => openLogImpulseModal());
+  document.getElementById('dash-view-gk-btn')?.addEventListener('click', () => setView('gatekeeper'));
 
   // Category breakdown click -> view transactions in category
   document.querySelectorAll('.cat-breakdown-row').forEach(el => {
@@ -5309,6 +5525,25 @@ async function init() {
   document.getElementById('mobile-quick-add')?.addEventListener('click', () => openAddModal());
   document.getElementById('header-import-btn')?.addEventListener('click', () => openImportModal());
   document.getElementById('open-import-sidebar')?.addEventListener('click', () => openImportModal());
+
+  // Gatekeeper backdrop click handler
+  const gkModal = document.getElementById('gatekeeper-modal');
+  gkModal?.addEventListener('click', e => {
+    if (e.target === gkModal) closeModal('gatekeeper-modal');
+  });
+
+  // Initialize Gatekeeper module
+  initGatekeeper({
+    categories: state.categories,
+    showToast,
+    openModal,
+    closeModal,
+    fmt,
+    today,
+    renderView,
+    gistSync
+  });
+  updateGatekeeperBadge();
 
   // Nav clicks
   document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el => {

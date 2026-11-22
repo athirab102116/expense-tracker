@@ -1,12 +1,13 @@
-const CACHE = 'expense-tracker-v73';
+const CACHE = 'expense-tracker-v75';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './css/app.css',
-  './css/app.css?v=73',
+  './css/app.css?v=75',
   './js/app.js',
-  './js/app.js?v=73',
+  './js/app.js?v=75',
+  './js/gatekeeper.js',
   './js/db.js',
   './js/categories.js',
   './js/audio.js',
@@ -18,10 +19,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE)
       .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -30,11 +31,6 @@ self.addEventListener('activate', e => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
-      .then(() => {
-        return self.clients.matchAll({ type: 'window' }).then(clients => {
-          clients.forEach(client => client.navigate(client.url));
-        });
-      })
   );
 });
 
@@ -43,8 +39,13 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Network-first for HTML so the page is always fresh
-  if (e.request.destination === 'document' || url.pathname.endsWith('.html')) {
+  // Network-first for HTML, JS, and CSS so code updates are instant when online
+  if (
+    e.request.destination === 'document' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css')
+  ) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
@@ -59,9 +60,9 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Cache-first for everything else (CSS, JS, images)
+  // Cache-first for images, fonts, and libs
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(cached => {
+    caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
         if (res && res.status === 200) {

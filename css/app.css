@@ -3894,6 +3894,11 @@ a {
   color: var(--sage);
   border: 1px solid rgba(143, 169, 152, 0.32);
 }
+.badge-mauve {
+  background: rgba(182, 137, 154, 0.16);
+  color: var(--mauve);
+  border: 1px solid rgba(182, 137, 154, 0.32);
+}
 
 .gk-kpi-val {
   font-size: 26px;
@@ -3913,6 +3918,7 @@ a {
 .text-income { color: var(--income); }
 .text-gold { color: var(--gold); }
 .text-brand { color: var(--brand); }
+.text-mauve { color: var(--mauve); }
 
 .gk-kpi-sub {
   font-size: 12px;
@@ -4069,6 +4075,9 @@ a {
 .gk-card-let_go {
   border-color: rgba(127, 176, 147, 0.35);
 }
+.gk-card-future {
+  border-color: rgba(182, 137, 154, 0.38);
+}
 
 .gk-card-top {
   display: flex;
@@ -4131,6 +4140,11 @@ a {
   background: rgba(143, 169, 152, 0.16);
   color: var(--info);
   border: 1px solid rgba(143, 169, 152, 0.3);
+}
+.status-future {
+  background: rgba(182, 137, 154, 0.16);
+  color: var(--mauve);
+  border: 1px solid rgba(182, 137, 154, 0.32);
 }
 
 .gk-card-heading {
@@ -4233,6 +4247,11 @@ a {
 .banner-bought {
   background: rgba(143, 169, 152, 0.14);
   border: 1px solid rgba(143, 169, 152, 0.28);
+  color: var(--text2);
+}
+.banner-future {
+  background: rgba(182, 137, 154, 0.14);
+  border: 1px solid rgba(182, 137, 154, 0.28);
   color: var(--text2);
 }
 .gk-resolved-icon {

@@ -1601,6 +1601,26 @@ async function bootstrap() {
             fit: 'Stretch (-10)'
           },
           status: 'let_go'
+        },
+        {
+          id: 'gk-sample-4',
+          name: 'Keychron Q1 Pro Custom Mechanical Keyboard',
+          price: 16499,
+          gatekeeperCategory: 'Goal / Skill Enabler',
+          budgetCategory: 'Shopping',
+          coolingHours: 48,
+          createdAt: new Date(nowMs - 72 * 3600 * 1000).toISOString(),
+          unlockAt: new Date(nowMs - 24 * 3600 * 1000).toISOString(),
+          utilityScore: 70,
+          answers: {
+            frequency: 'Daily (+25)',
+            redundancy: 'Upgrade (+10)',
+            trigger: 'Planned (+25)',
+            fit: 'Tight (+10)'
+          },
+          status: 'future',
+          movedToFutureAt: new Date(nowMs - 20 * 3600 * 1000).toISOString(),
+          futureNote: 'Wait for Diwali sale or work bonus before purchasing'
         }
       ];
       for (const g of sampleGk) await db.put('gatekeeper', g);
@@ -1732,6 +1752,26 @@ async function loadDemoData() {
         fit: 'Stretch (-10)'
       },
       status: 'let_go'
+    },
+    {
+      id: 'demo-gk-4',
+      name: 'Keychron Q1 Pro Custom Mechanical Keyboard',
+      price: 16499,
+      gatekeeperCategory: 'Goal / Skill Enabler',
+      budgetCategory: 'Shopping',
+      coolingHours: 48,
+      createdAt: new Date(nowMs - 72 * 3600 * 1000).toISOString(),
+      unlockAt: new Date(nowMs - 24 * 3600 * 1000).toISOString(),
+      utilityScore: 70,
+      answers: {
+        frequency: 'Daily (+25)',
+        redundancy: 'Upgrade (+10)',
+        trigger: 'Planned (+25)',
+        fit: 'Tight (+10)'
+      },
+      status: 'future',
+      movedToFutureAt: new Date(nowMs - 20 * 3600 * 1000).toISOString(),
+      futureNote: 'Wait for Diwali sale or work bonus before purchasing'
     }
   ];
   for (const gk of sampleGk) {
@@ -1998,6 +2038,7 @@ async function renderDashboard() {
   const gkCooling = gkItems.filter(i => i.status === 'cooling');
   const gkCoolingAmt = gkCooling.reduce((s, i) => s + (Number(i.price) || 0), 0);
   const gkReady = gkItems.filter(i => i.status === 'ready');
+  const gkFuture = gkItems.filter(i => i.status === 'future');
 
   // Fetch budgets to set Total Income as Total Budgeted Amount (fallback to credits if none exist)
   const allBudgets = await db.getAll('budgets');
@@ -2337,8 +2378,9 @@ async function renderDashboard() {
         <div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="card-heading">Purchase Gatekeeper</span>
-            <span class="gk-status-badge status-cooling" style="font-size:11px">Cooling-Off Queue</span>
+            <span class="gk-status-badge status-cooling" style="font-size:11px">Cooling Queue</span>
             ${gkReady.length > 0 ? `<span class="gk-status-badge status-ready" style="font-size:11px">🔔 ${gkReady.length} Ready</span>` : ''}
+            ${gkFuture.length > 0 ? `<span class="gk-status-badge status-future" style="font-size:11px">📌 ${gkFuture.length} Future</span>` : ''}
           </div>
           <div class="card-subheading">Cooling-off queue &amp; utility evaluation to curb impulse spending</div>
         </div>
@@ -2370,6 +2412,12 @@ async function renderDashboard() {
         <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Ready for Decision</div>
         <div style="font-size:18px;font-weight:700;color:var(--brand)">${gkReady.length}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkReady.length > 0 ? '✨ 48h cool-off complete' : 'All cooled off'}</div>
+      </div>
+
+      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Future Reference</div>
+        <div style="font-size:18px;font-weight:700;color:var(--mauve)">${gkFuture.length}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkFuture.length > 0 ? '📌 Saved for later' : 'Wishlist empty'}</div>
       </div>
     </div>
   </div>

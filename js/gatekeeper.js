@@ -403,6 +403,7 @@ export async function handleLogImpulse(formData) {
   const createdAt = new Date().toISOString();
   const unlockAt = new Date(Date.now() + coolingHours * 3600 * 1000).toISOString();
   const utilityScore = computeUtilityScore(formData.answers);
+  const isFuture = formData.initialStatus === 'future';
 
   const item = {
     id: generateUUID(),
@@ -415,18 +416,61 @@ export async function handleLogImpulse(formData) {
     unlockAt,
     utilityScore,
     answers: {
-      frequency: formData.answers.frequency || 'Daily (+25)',
-      redundancy: formData.answers.redundancy || 'No (+25)',
-      trigger: formData.answers.trigger || 'Planned (+25)',
-      fit: formData.answers.fit || 'Easy (+25)'
+      frequency: formData.answers?.frequency || 'Daily (+25)',
+      redundancy: formData.answers?.redundancy || 'No (+25)',
+      trigger: formData.answers?.trigger || 'Planned (+25)',
+      fit: formData.answers?.fit || 'Easy (+25)'
     },
-    status: 'cooling'
+    status: isFuture ? 'future' : 'cooling',
+    movedToFutureAt: isFuture ? createdAt : null,
+    futureNote: formData.futureNote || ''
   };
 
   await saveGatekeeperItem(item);
   playAdd();
-  ctx.showToast(`🛡️ Locked "${item.name}" into ${coolingHours}h cooling queue!`);
+  if (isFuture) {
+    ctx.showToast(`📌 Saved "${item.name}" to Future Reference List!`);
+  } else {
+    ctx.showToast(`🛡️ Locked "${item.name}" into ${coolingHours}h cooling queue!`);
+  }
   ctx.closeModal('gatekeeper-modal');
+  if (ctx.gistSync) ctx.gistSync();
+  if (ctx.renderView) ctx.renderView();
+}
+
+export async function handleItemMoveToFuture(id, note = '') {
+  const ctx = getContext();
+  const items = await getGatekeeperItems();
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+
+  item.status = 'future';
+  item.movedToFutureAt = new Date().toISOString();
+  if (note && typeof note === 'string') {
+    item.futureNote = note.trim();
+  }
+
+  await saveGatekeeperItem(item);
+  playAdd();
+  ctx.showToast(`📌 Moved "${item.name}" to Future List for reference!`);
+  if (ctx.gistSync) ctx.gistSync();
+  if (ctx.renderView) ctx.renderView();
+}
+
+export async function handleItemMoveBackToCooling(id) {
+  const ctx = getContext();
+  const items = await getGatekeeperItems();
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+
+  const coolingHours = item.coolingHours || 48;
+  item.status = 'cooling';
+  item.createdAt = new Date().toISOString();
+  item.unlockAt = new Date(Date.now() + coolingHours * 3600 * 1000).toISOString();
+
+  await saveGatekeeperItem(item);
+  playAdd();
+  ctx.showToast(`⏳ Moved "${item.name}" back to Cooling Queue (${coolingHours}h)`);
   if (ctx.gistSync) ctx.gistSync();
   if (ctx.renderView) ctx.renderView();
 }
@@ -525,6 +569,9 @@ export async function renderGatekeeper() {
   const purchasedItems = items.filter(i => i.status === 'purchased');
   const totalPurchasedAmt = purchasedItems.reduce((s, i) => s + (Number(i.price) || 0), 0);
 
+  const futureItems = items.filter(i => i.status === 'future');
+  const totalFutureAmt = futureItems.reduce((s, i) => s + (Number(i.price) || 0), 0);
+
   const resolvedCount = letGoItems.length + purchasedItems.length;
   const resistedRate = resolvedCount > 0 ? Math.round((letGoItems.length / resolvedCount) * 100) : 0;
   const avgUtility = items.length > 0 ? Math.round(items.reduce((s, i) => s + (Number(i.utilityScore) || 0), 0) / items.length) : 0;
@@ -546,7 +593,7 @@ export async function renderGatekeeper() {
     );
   }
 
-  // Sort: Ready first, then cooling (closest unlock first), then recent
+  // Sort: Ready first, then cooling (closest unlock first), then future, then recent
   filtered.sort((a, b) => {
     if (a.status === 'ready' && b.status !== 'ready') return -1;
     if (b.status === 'ready' && a.status !== 'ready') return 1;
@@ -631,14 +678,14 @@ export async function renderGatekeeper() {
         <div class="gk-kpi-sub">${ctx.fmt(totalReadyAmt)} waiting for final yes/no</div>
       </div>
 
-      <!-- Card 4: Restraint / Utility Score -->
+      <!-- Card 4: Future Reference / Wishlist -->
       <div class="gk-kpi-card card">
         <div class="gk-kpi-top">
-          <span class="gk-kpi-label">Restraint Power</span>
-          <span class="gk-kpi-badge badge-sage">🎯 Discipline</span>
+          <span class="gk-kpi-label">Future Reference</span>
+          <span class="gk-kpi-badge badge-mauve">📌 Saved</span>
         </div>
-        <div class="gk-kpi-val">${resistedRate}% <span class="gk-kpi-val-sub">resisted</span></div>
-        <div class="gk-kpi-sub">Avg utility score: ${avgUtility}/100 across ${items.length} logged items</div>
+        <div class="gk-kpi-val text-mauve">${ctx.fmt(totalFutureAmt)}</div>
+        <div class="gk-kpi-sub">${futureItems.length} item${futureItems.length === 1 ? '' : 's'} saved for later · ${resistedRate}% restraint</div>
       </div>
     </div>
 
@@ -655,6 +702,9 @@ export async function renderGatekeeper() {
           </button>
           <button class="gk-tab-btn ${_currentFilter === 'ready' ? 'active' : ''}" data-filter="ready">
             🔔 Ready <span class="gk-tab-count ${readyItems.length > 0 ? 'gk-count-highlight' : ''}">${readyItems.length}</span>
+          </button>
+          <button class="gk-tab-btn ${_currentFilter === 'future' ? 'active' : ''}" data-filter="future">
+            📌 Future List <span class="gk-tab-count">${futureItems.length}</span>
           </button>
           <button class="gk-tab-btn ${_currentFilter === 'let_go' ? 'active' : ''}" data-filter="let_go">
             🛡️ Resisted <span class="gk-tab-count">${letGoItems.length}</span>
@@ -742,6 +792,8 @@ function renderItemCard(item, ctx) {
     statusBadge = `<span class="gk-status-badge status-cooling">⏳ Cooling (${formatted})</span>`;
   } else if (effectiveStatus === 'ready') {
     statusBadge = `<span class="gk-status-badge status-ready">✨ Unlocked · Decision Time</span>`;
+  } else if (effectiveStatus === 'future') {
+    statusBadge = `<span class="gk-status-badge status-future">📌 Future Reference</span>`;
   } else if (effectiveStatus === 'let_go') {
     statusBadge = `<span class="gk-status-badge status-let-go">🛡️ Resisted · Saved ${ctx.fmt(item.price)}</span>`;
   } else if (effectiveStatus === 'purchased') {
@@ -822,6 +874,16 @@ function renderItemCard(item, ctx) {
       </div>
     ` : ''}
 
+    ${effectiveStatus === 'future' ? `
+      <div class="gk-resolved-banner banner-future">
+        <span class="gk-resolved-icon">📌</span>
+        <div style="flex:1">
+          <strong>Saved for Future Reference</strong>
+          <div class="gk-resolved-sub">Kept on your wishlist for later consideration.${item.futureNote ? ` <span style="display:block;margin-top:2px;font-style:italic;color:var(--text)">"${item.futureNote}"</span>` : ''}</div>
+        </div>
+      </div>
+    ` : ''}
+
     <!-- Diagnostic Utility Score Meter -->
     <div class="gk-utility-section">
       <div class="gk-utility-header">
@@ -861,6 +923,9 @@ function renderItemCard(item, ctx) {
         <button class="btn-secondary-sm gk-action-btn gk-letgo-btn" data-id="${item.id}" title="Walk away and add to savings">
           🌿 Let It Go (Save ${ctx.fmt(item.price)})
         </button>
+        <button class="btn-ghost-sm gk-action-btn gk-future-btn" data-id="${item.id}" title="Move to future list to keep for future reference">
+          📌 Future List
+        </button>
         <button class="btn-ghost-sm gk-action-btn gk-unlock-btn" data-id="${item.id}" title="Fast-forward cooling period for testing">
           ⚡ Unlock Now
         </button>
@@ -876,13 +941,34 @@ function renderItemCard(item, ctx) {
         <button class="btn-secondary-sm gk-action-btn gk-letgo-btn" data-id="${item.id}" title="Walk away and save money">
           🌿 Let It Go
         </button>
+        <button class="btn-ghost-sm gk-action-btn gk-future-btn" data-id="${item.id}" title="Save to future reference list">
+          📌 Future List
+        </button>
         <button class="btn-ghost-sm gk-action-btn gk-extend-btn" data-id="${item.id}" title="Cool off for another 24 hours">
           ⏳ +24h More
         </button>
       ` : ''}
 
+      ${effectiveStatus === 'future' ? `
+        <button class="btn-secondary-sm gk-action-btn gk-recool-btn" data-id="${item.id}" title="Move back to 48h cooling queue">
+          ⏳ Re-cool (48h)
+        </button>
+        <button class="btn-primary-sm gk-action-btn gk-buy-btn" data-id="${item.id}" title="Ready to purchase and log transaction">
+          🛍️ Buy &amp; Log
+        </button>
+        <button class="btn-ghost-sm gk-action-btn gk-letgo-btn" data-id="${item.id}" title="Walk away and mark as avoided">
+          🌿 Let It Go
+        </button>
+        <button class="btn-ghost-sm gk-action-btn gk-del-btn" data-id="${item.id}" title="Delete item">
+          🗑️
+        </button>
+      ` : ''}
+
       ${effectiveStatus === 'let_go' || effectiveStatus === 'purchased' ? `
         <span class="gk-date-logged">Logged on ${new Date(item.createdAt).toLocaleDateString('en-IN', { month:'short', day:'numeric' })}</span>
+        <button class="btn-ghost-sm gk-action-btn gk-future-btn" data-id="${item.id}" title="Move back to Future Wishlist">
+          📌 Future List
+        </button>
         <button class="btn-ghost-sm gk-action-btn gk-del-btn" data-id="${item.id}" title="Delete item">
           🗑️ Delete
         </button>
@@ -996,7 +1082,28 @@ export function mountGatekeeper() {
     });
   });
 
-  // 5. Delete Item
+  // 5. Move to Future List
+  document.querySelectorAll('.gk-future-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      const note = prompt('Add an optional reference note (e.g. wait for sale, birthday, wait for review):') || '';
+      await handleItemMoveToFuture(id, note);
+    });
+  });
+
+  // 6. Move Back from Future List to Cooling Queue
+  document.querySelectorAll('.gk-recool-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      await handleItemMoveBackToCooling(id);
+    });
+  });
+
+  // 7. Delete Item
   document.querySelectorAll('.gk-del-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -1258,9 +1365,12 @@ export function renderLogImpulseModal() {
       </div>
 
       <!-- Submit & Cancel Buttons -->
-      <div class="modal-footer" style="display:flex;gap:12px;margin-top:20px;justify-content:flex-end">
+      <div class="modal-footer" style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap">
         <button type="button" class="btn-secondary" id="gk-modal-cancel-btn">Cancel</button>
-        <button type="submit" class="btn-primary" id="gk-modal-submit-btn" style="flex:1;max-width:260px">
+        <button type="button" class="btn-secondary" id="gk-modal-future-btn" style="border-color:rgba(182, 137, 154, 0.45);color:var(--mauve)" title="Save to Future Reference List without cooling lock">
+          📌 Save to Future List
+        </button>
+        <button type="submit" class="btn-primary" id="gk-modal-submit-btn" style="flex:1;min-width:200px">
           🛡️ Lock in Cooling Queue
         </button>
       </div>
@@ -1369,6 +1479,40 @@ export function mountLogImpulseModal() {
       budgetCategory,
       coolingHours,
       answers
+    });
+  });
+
+  // Save directly to Future List handler
+  document.getElementById('gk-modal-future-btn')?.addEventListener('click', async () => {
+    const name = document.getElementById('gk-input-name')?.value.trim();
+    const price = parseFloat(document.getElementById('gk-input-price')?.value) || 0;
+    const gatekeeperCategory = document.querySelector('input[name="gatekeeperCategory"]:checked')?.value || 'Pure Dopamine / Treat';
+    const budgetCategory = document.getElementById('gk-select-budget-cat')?.value || 'Shopping';
+    const coolingHours = parseInt(document.getElementById('gk-select-cooling-hours')?.value, 10) || 48;
+
+    const answers = {
+      frequency: document.querySelector('input[name="q_frequency"]:checked')?.value || 'Daily (+25)',
+      redundancy: document.querySelector('input[name="q_redundancy"]:checked')?.value || 'No (+25)',
+      trigger: document.querySelector('input[name="q_trigger"]:checked')?.value || 'Planned (+25)',
+      fit: document.querySelector('input[name="q_fit"]:checked')?.value || 'Easy (+25)'
+    };
+
+    if (!name || price <= 0) {
+      alert('Please enter a valid item name and price.');
+      return;
+    }
+
+    const note = prompt('Optional reference note for Future List (e.g. wait for sale, wishlist):') || '';
+
+    await handleLogImpulse({
+      name,
+      price,
+      gatekeeperCategory,
+      budgetCategory,
+      coolingHours,
+      answers,
+      initialStatus: 'future',
+      futureNote: note
     });
   });
 }

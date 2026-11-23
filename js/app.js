@@ -1729,8 +1729,25 @@ async function handleURLParams() {
 function updateHeaderState() {
   const titleEl = document.getElementById('header-view-title');
   if (titleEl) {
-    const map = { dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', cards: 'SBI Credit Card', settings: 'Settings', gatekeeper: 'Gatekeeper' };
+    const map = {
+      dashboard: 'Dashboard',
+      transactions: 'Transactions',
+      budgets: 'Budgets',
+      cards: 'Credit Card',
+      settings: 'Settings',
+      gatekeeper: 'Purchase Gatekeeper'
+    };
     titleEl.textContent = map[state.view] || 'Dashboard';
+  }
+  const appBreadcrumb = document.querySelector('.breadcrumb-app');
+  if (appBreadcrumb) {
+    if (state.view === 'cards') {
+      appBreadcrumb.textContent = 'Credit Card';
+    } else if (state.view === 'gatekeeper') {
+      appBreadcrumb.textContent = 'Gatekeeper';
+    } else {
+      appBreadcrumb.textContent = 'Expenses';
+    }
   }
   const monthEl = document.getElementById('header-month-label');
   if (monthEl && state.currentMonth) {
@@ -1903,15 +1920,6 @@ async function renderDashboard() {
   const expenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === month);
   const prevExpenses = allExpenses.filter(e => (e.month || e.date?.slice(0, 7)) === prevMonth);
 
-  // Purchase Gatekeeper metrics
-  let gkItems = [];
-  try { gkItems = await getGatekeeperItems(); } catch (_) {}
-  const gkLetGo = gkItems.filter(i => i.status === 'let_go');
-  const gkTotalSaved = gkLetGo.reduce((s, i) => s + (Number(i.price) || 0), 0);
-  const gkCooling = gkItems.filter(i => i.status === 'cooling');
-  const gkCoolingAmt = gkCooling.reduce((s, i) => s + (Number(i.price) || 0), 0);
-  const gkReady = gkItems.filter(i => i.status === 'ready');
-  const gkFuture = gkItems.filter(i => i.status === 'future');
 
   // Fetch budgets to set Total Income as Total Budgeted Amount (fallback to credits if none exist)
   const allBudgets = await db.getAll('budgets');
@@ -2193,107 +2201,6 @@ async function renderDashboard() {
     </div>
   </div>
 
-  <!-- Credit Card Bill & Spendings Overview Card -->
-  ${(() => {
-    return `
-  <div class="dashboard-card" style="margin-top:20px">
-    <div class="card-header-row">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:38px;height:38px;border-radius:10px;background:var(--brand-light);display:flex;align-items:center;justify-content:center;color:var(--brand);flex-shrink:0">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-            <line x1="2" y1="10" x2="22" y2="10"></line>
-          </svg>
-        </div>
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="card-heading">SBI Credit Card Bill & Spendings</span>
-            <span id="dash-cc-status-pill"></span>
-          </div>
-          <div class="card-subheading">Tracked for ${monthLabel(month)}</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn-primary" id="dash-quick-pay-card-btn" style="display:none;font-size:12px;padding:6px 14px">Pay Bill →</button>
-        <button class="btn-secondary" id="dash-view-cards-btn" style="font-size:12px;padding:6px 14px">Card Details →</button>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:14px;margin-top:16px">
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">New Card Charges</div>
-        <div class="kpi-dash-cc" id="dash-cc-spent" style="font-size:18px;font-weight:700;color:var(--text)">₹0.00</div>
-        <div id="dash-cc-txns-count" style="font-size:11px;color:var(--text3);margin-top:2px">0 transactions</div>
-      </div>
-
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Paid Off</div>
-        <div class="kpi-dash-cc" id="dash-cc-paid" style="font-size:18px;font-weight:700;color:var(--income)">₹0.00</div>
-        <div id="dash-cc-paid-pct" style="font-size:11px;color:var(--text3);margin-top:2px">0% paid</div>
-      </div>
-
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Carryover to Next Month</div>
-        <div class="kpi-dash-cc" id="dash-cc-carry" style="font-size:18px;font-weight:700;color:var(--text)">₹0.00</div>
-        <div id="dash-cc-carry-note" style="font-size:11px;color:var(--text3);margin-top:2px">Outstanding balance</div>
-      </div>
-    </div>
-  </div>`;
-  })()}
-
-  <!-- Purchase Gatekeeper Dashboard Section -->
-  <div class="dashboard-card" style="margin-top:20px" id="dash-gatekeeper-section">
-    <div class="card-header-row">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:18px">
-          🛡️
-        </div>
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="card-heading">Purchase Gatekeeper</span>
-            <span class="gk-status-badge status-cooling" style="font-size:11px">Cooling Queue</span>
-            ${gkReady.length > 0 ? `<span class="gk-status-badge status-ready" style="font-size:11px">🔔 ${gkReady.length} Ready</span>` : ''}
-            ${gkFuture.length > 0 ? `<span class="gk-status-badge status-future" style="font-size:11px">📌 ${gkFuture.length} Future</span>` : ''}
-          </div>
-          <div class="card-subheading">Cooling-off queue &amp; utility evaluation to curb impulse spending</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn-primary" id="dash-log-impulse-btn" style="font-size:12px;padding:6px 14px" title="Log an impulse purchase into the cooling queue">
-          + Log Impulse
-        </button>
-        <button class="btn-secondary" id="dash-view-gk-btn" style="font-size:12px;padding:6px 14px" title="View full Gatekeeper view">
-          Gatekeeper Queue (${gkItems.length}) →
-        </button>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:14px;margin-top:16px">
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Resisted Impulses (Saved)</div>
-        <div style="font-size:18px;font-weight:700;color:var(--income)">${fmt(gkTotalSaved)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkLetGo.length} impulse${gkLetGo.length !== 1 ? 's' : ''} avoided</div>
-      </div>
-
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Cooling Off Now</div>
-        <div style="font-size:18px;font-weight:700;color:var(--gold)">${fmt(gkCoolingAmt)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkCooling.length} item${gkCooling.length !== 1 ? 's' : ''} in cooling buffer</div>
-      </div>
-
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Ready for Decision</div>
-        <div style="font-size:18px;font-weight:700;color:var(--brand)">${gkReady.length}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkReady.length > 0 ? '✨ 48h cool-off complete' : 'All cooled off'}</div>
-      </div>
-
-      <div style="background:var(--surface2);padding:14px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:4px">Future Reference</div>
-        <div style="font-size:18px;font-weight:700;color:var(--mauve)">${gkFuture.length}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${gkFuture.length > 0 ? '📌 Saved for later' : 'Wishlist empty'}</div>
-      </div>
-    </div>
-  </div>
 
   <!-- Recent Transactions Card -->
   <div class="dashboard-card" style="margin-top:20px">
@@ -2354,8 +2261,6 @@ async function mountDashboard() {
   // Event handlers
   document.getElementById('dash-view-all-txns')?.addEventListener('click', () => setView('transactions'));
   document.getElementById('dash-view-all-txns-link')?.addEventListener('click', () => setView('transactions'));
-  document.getElementById('dash-log-impulse-btn')?.addEventListener('click', () => openLogImpulseModal());
-  document.getElementById('dash-view-gk-btn')?.addEventListener('click', () => setView('gatekeeper'));
 
   // Category breakdown click -> view transactions in category
   document.querySelectorAll('.cat-breakdown-row').forEach(el => {
@@ -2397,63 +2302,6 @@ async function mountDashboard() {
     });
   });
 
-  // Populate Credit Card Summary in Dashboard
-  try {
-    const allCardPayments = await getCardPayments();
-    const { current: ccDashSummary } = calculateCreditCardMonthlySummary(allExpenses, allCardPayments, month, 'all');
-
-    const spentEl = document.getElementById('dash-cc-spent');
-    const txnsEl = document.getElementById('dash-cc-txns-count');
-    const paidEl = document.getElementById('dash-cc-paid');
-    const pctEl = document.getElementById('dash-cc-paid-pct');
-    const carryEl = document.getElementById('dash-cc-carry');
-    const carryNoteEl = document.getElementById('dash-cc-carry-note');
-    const pillEl = document.getElementById('dash-cc-status-pill');
-    const payBtn = document.getElementById('dash-quick-pay-card-btn');
-
-    if (spentEl) spentEl.textContent = fmtCurrency(ccDashSummary.spendings, true);
-    if (txnsEl) txnsEl.textContent = `${ccDashSummary.expenses.length} transaction${ccDashSummary.expenses.length !== 1 ? 's' : ''}`;
-    if (paidEl) paidEl.textContent = fmtCurrency(ccDashSummary.paid, true);
-    if (pctEl) pctEl.textContent = `${ccDashSummary.percentPaid}% of bill paid`;
-    if (carryEl) {
-      carryEl.textContent = fmtCurrency(ccDashSummary.closingBalance, true);
-      carryEl.style.color = ccDashSummary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)';
-    }
-    if (carryNoteEl) {
-      carryNoteEl.textContent = ccDashSummary.closingBalance === 0 ? 'Zero balance carried forward' : 'Unpaid balance rolling over';
-    }
-    if (pillEl) {
-      if (ccDashSummary.totalDue === 0) {
-        pillEl.className = 'cc-status-pill neutral';
-        pillEl.textContent = '● No Card Spendings';
-      } else if (ccDashSummary.closingBalance === 0) {
-        pillEl.className = 'cc-status-pill positive';
-        pillEl.textContent = '✓ Fully Paid Off';
-      } else if (ccDashSummary.paid > 0) {
-        pillEl.className = 'cc-status-pill warning';
-        pillEl.textContent = `● Partially Paid (${ccDashSummary.percentPaid}%)`;
-      } else {
-        pillEl.className = 'cc-status-pill negative';
-        pillEl.textContent = '● Payment Due';
-      }
-    }
-    if (payBtn) {
-      if (ccDashSummary.closingBalance > 0) {
-        payBtn.style.display = 'inline-flex';
-        payBtn.textContent = `Pay Bill (${fmtCurrency(ccDashSummary.closingBalance, false)}) →`;
-        payBtn.onclick = () => {
-          setView('cards');
-          setTimeout(() => openCardPaymentModal(ccDashSummary.closingBalance), 300);
-        };
-      } else {
-        payBtn.style.display = 'none';
-      }
-    }
-  } catch (err) {
-    console.warn('Dashboard CC summary error:', err);
-  }
-
-  document.getElementById('dash-view-cards-btn')?.addEventListener('click', () => setView('cards'));
 }
 
 function renderDonutChart(expenses) {

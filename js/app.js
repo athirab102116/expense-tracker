@@ -2160,12 +2160,12 @@ async function renderDashboard() {
       <div class="card-header-row">
         <div>
           <div style="display:flex;align-items:center;gap:10px">
-            <span class="card-heading" style="font-size:17px">Category Breakdown</span>
+            <h2 class="category-breakdown-title">Category Breakdown</h2>
             ${catEntries.length > 0 ? `
               <span class="cat-count-badge">${catEntries.length} Categories</span>
             ` : ''}
           </div>
-          <div class="card-subheading">${monthLabel(month)} Spending Distribution &amp; Budget Health</div>
+          <div class="category-breakdown-subtitle">${monthLabel(month)} Spending</div>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
           <button class="btn-secondary-sm" id="dash-view-budgets-link" style="font-size:12px;font-weight:600">Budgets 🎯</button>

@@ -832,6 +832,24 @@ a {
   box-shadow: var(--shadow-lg);
 }
 
+.category-breakdown-title {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.015em;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.category-breakdown-subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text3);
+  margin-top: 3px;
+  letter-spacing: -0.01em;
+}
+
 .cat-count-badge {
   font-size: 11.5px;
   font-weight: 700;

@@ -4770,7 +4770,7 @@ a {
 }
 .gk-preview-table-header {
   display: grid;
-  grid-template-columns: 140px minmax(180px, 1.3fr) minmax(240px, 1.8fr) 130px 110px 90px;
+  grid-template-columns: 140px minmax(180px, 1.3fr) minmax(220px, 1.8fr) 120px 110px 145px;
   gap: 12px;
   padding: 8px 18px;
   font-size: 11px;
@@ -4805,7 +4805,7 @@ a {
 
 .gk-preview-row {
   display: grid;
-  grid-template-columns: 140px minmax(180px, 1.3fr) minmax(240px, 1.8fr) 130px 110px 90px;
+  grid-template-columns: 140px minmax(180px, 1.3fr) minmax(220px, 1.8fr) 120px 110px 145px;
   gap: 12px;
   padding: 14px 18px;
   align-items: center;
@@ -4970,6 +4970,10 @@ a {
 }
 .gk-cell-action {
   text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
 }
 .gk-row-expand-btn {
   font-size: 11px;

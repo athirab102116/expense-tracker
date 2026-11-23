@@ -199,6 +199,16 @@ function generateUUID() {
   });
 }
 
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ─── Utility Score & Tiers ──────────────────────────────────────────────────
 export function computeUtilityScore(answers) {
   if (!answers) return 0;
@@ -563,6 +573,48 @@ export async function handleLogImpulse(formData) {
   } else {
     ctx.showToast(`🛡️ Locked "${item.name}" into ${coolingHours}h cooling queue!`);
   }
+  ctx.closeModal('gatekeeper-modal');
+  if (ctx.gistSync) ctx.gistSync();
+  if (ctx.renderView) ctx.renderView();
+}
+
+export async function handleEditImpulse(id, formData) {
+  const ctx = getContext();
+  const items = await getGatekeeperItems();
+  const item = items.find(i => String(i.id) === String(id));
+  if (!item) return;
+
+  const coolingHours = Number(formData.coolingHours) || 48;
+  const utilityScore = computeUtilityScore(formData.answers);
+
+  item.name = formData.name.trim();
+  item.price = Number(formData.price) || 0;
+  item.gatekeeperCategory = formData.gatekeeperCategory || item.gatekeeperCategory;
+  item.budgetCategory = formData.budgetCategory || item.budgetCategory;
+  item.answers = {
+    frequency: formData.answers?.frequency || 'Daily (+25)',
+    redundancy: formData.answers?.redundancy || 'No (+25)',
+    trigger: formData.answers?.trigger || 'Planned (+25)',
+    fit: formData.answers?.fit || 'Easy (+25)'
+  };
+  item.utilityScore = utilityScore;
+  item.updatedAt = new Date().toISOString();
+
+  // If item is currently cooling and coolingHours changed, recalculate unlockAt
+  if (item.status === 'cooling') {
+    if (item.coolingHours !== coolingHours) {
+      item.coolingHours = coolingHours;
+      const baseCreated = item.createdAt ? new Date(item.createdAt).getTime() : Date.now();
+      item.unlockAt = new Date(baseCreated + coolingHours * 3600 * 1000).toISOString();
+    }
+  } else {
+    item.coolingHours = coolingHours;
+  }
+
+  await saveGatekeeperItem(item);
+  playAdd();
+
+  ctx.showToast(`✏️ Updated "${item.name}"!`);
   ctx.closeModal('gatekeeper-modal');
   if (ctx.gistSync) ctx.gistSync();
   if (ctx.renderView) ctx.renderView();
@@ -1145,6 +1197,9 @@ function renderPreviewItemRow(item, index, ctx) {
 
       <!-- Expand Trigger Column -->
       <div class="gk-th-action gk-cell-action">
+        <button class="btn-ghost-sm gk-action-btn gk-edit-btn" data-id="${item.id}" title="Edit impulse details" style="padding:4px 8px;font-size:12px">
+          ✏️ Edit
+        </button>
         <button class="btn-secondary-sm gk-row-expand-btn" data-id="${item.id}" title="Toggle detailed options">
           ${isExpanded ? 'Hide ▲' : 'Options ▼'}
         </button>
@@ -1315,6 +1370,9 @@ function renderItemCard(item, ctx) {
         <button class="btn-secondary-sm gk-action-btn gk-letgo-btn" data-id="${item.id}" title="Walk away and add to savings">
           🌿 Let It Go (Save ${ctx.fmt(item.price)})
         </button>
+        <button class="btn-ghost-sm gk-action-btn gk-edit-btn" data-id="${item.id}" title="Edit impulse details">
+          ✏️ Edit
+        </button>
         <button class="btn-ghost-sm gk-action-btn gk-future-btn" data-id="${item.id}" title="Move to future list to keep for future reference">
           📌 Future List
         </button>
@@ -1332,6 +1390,9 @@ function renderItemCard(item, ctx) {
         </button>
         <button class="btn-secondary-sm gk-action-btn gk-letgo-btn" data-id="${item.id}" title="Walk away and save money">
           🌿 Let It Go
+        </button>
+        <button class="btn-ghost-sm gk-action-btn gk-edit-btn" data-id="${item.id}" title="Edit impulse details">
+          ✏️ Edit
         </button>
         <button class="btn-ghost-sm gk-action-btn gk-future-btn" data-id="${item.id}" title="Save to future reference list">
           📌 Future List
@@ -1351,6 +1412,9 @@ function renderItemCard(item, ctx) {
         <button class="btn-primary-sm gk-action-btn gk-buy-btn" data-id="${item.id}" title="Ready to purchase and log transaction">
           🛍️ Buy &amp; Log
         </button>
+        <button class="btn-ghost-sm gk-action-btn gk-edit-btn" data-id="${item.id}" title="Edit impulse details">
+          ✏️ Edit
+        </button>
         <button class="btn-ghost-sm gk-action-btn gk-letgo-btn" data-id="${item.id}" title="Walk away and mark as avoided">
           🌿 Let It Go
         </button>
@@ -1361,6 +1425,9 @@ function renderItemCard(item, ctx) {
 
       ${effectiveStatus === 'let_go' || effectiveStatus === 'purchased' ? `
         <span class="gk-date-logged">Logged on ${new Date(item.createdAt).toLocaleDateString('en-IN', { month:'short', day:'numeric' })}</span>
+        <button class="btn-ghost-sm gk-action-btn gk-edit-btn" data-id="${item.id}" title="Edit impulse details">
+          ✏️ Edit
+        </button>
         <button class="btn-ghost-sm gk-action-btn gk-future-btn" data-id="${item.id}" title="Move back to Future Wishlist">
           📌 Future List
         </button>
@@ -1524,7 +1591,21 @@ export function mountGatekeeper() {
     ctx.renderView();
   });
 
-  // Action Buttons on Cards:
+  // Action Buttons on Cards & Rows:
+  // 0. Edit Item
+  document.querySelectorAll('.gk-edit-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      const items = await getGatekeeperItems();
+      const item = items.find(i => String(i.id) === String(id));
+      if (item) {
+        openEditImpulseModal(item);
+      }
+    });
+  });
+
   // 1. Let It Go
   document.querySelectorAll('.gk-letgo-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -1635,9 +1716,10 @@ function startCountdownTicker() {
   }, 1000);
 }
 
-// ─── Render "+ Log Impulse" Modal Form ────────────────────────────────────────
-export function renderLogImpulseModal() {
+// ─── Render "+ Log Impulse" / "Edit Impulse" Modal Form ─────────────────────
+export function renderLogImpulseModal(itemToEdit = null) {
   const ctx = getContext();
+  const isEdit = !!itemToEdit;
   const categories = ctx.categories && ctx.categories.length > 0
     ? ctx.categories
     : [
@@ -1648,24 +1730,40 @@ export function renderLogImpulseModal() {
         { id: 'other', name: 'Other', emoji: '💫' }
       ];
 
-  const defaultAnswers = {
+  const currentAnswers = (itemToEdit && itemToEdit.answers) ? itemToEdit.answers : {
     frequency: 'Daily (+25)',
     redundancy: 'No (+25)',
     trigger: 'Planned (+25)',
     fit: 'Easy (+25)'
   };
-  const initialScore = computeUtilityScore(defaultAnswers);
+  const initialScore = isEdit && typeof itemToEdit.utilityScore === 'number'
+    ? itemToEdit.utilityScore
+    : computeUtilityScore(currentAnswers);
   const initialTier = getUtilityTier(initialScore);
+
+  const currentArchetype = itemToEdit?.gatekeeperCategory || 'Pure Dopamine / Treat';
+  const currentBudgetCat = itemToEdit?.budgetCategory || 'Shopping';
+  const currentCoolingHours = Number(itemToEdit?.coolingHours) || 48;
+
+  const coolingOptions = [
+    { value: 24, label: '24 Hours (1 Day)' },
+    { value: 48, label: '48 Hours (Standard — Recommended)' },
+    { value: 72, label: '72 Hours (3 Days — Weekend reflection)' },
+    { value: 168, label: '7 Days (Major investments > ₹5,000)' }
+  ];
+  if (!coolingOptions.some(o => o.value === currentCoolingHours)) {
+    coolingOptions.push({ value: currentCoolingHours, label: `${currentCoolingHours} Hours` });
+  }
 
   return `
   <div class="gk-modal-container">
     <!-- Header -->
     <div class="modal-header">
       <div class="gk-modal-title-wrap">
-        <div class="gk-modal-icon">🛡️</div>
+        <div class="gk-modal-icon">${isEdit ? '✏️' : '🛡️'}</div>
         <div>
-          <div class="modal-title">Log Impulse Purchase</div>
-          <div class="hint-text" style="margin:0">Cool off for 48 hours to separate impulsive dopamine from genuine utility.</div>
+          <div class="modal-title">${isEdit ? 'Edit Impulse Purchase' : 'Log Impulse Purchase'}</div>
+          <div class="hint-text" style="margin:0">${isEdit ? 'Update impulse details, archetype, cooling time, and diagnostic evaluation.' : 'Cool off for 48 hours to separate impulsive dopamine from genuine utility.'}</div>
         </div>
       </div>
       <button class="modal-close-btn" id="gk-modal-close" aria-label="Close dialog">✕</button>
@@ -1673,16 +1771,17 @@ export function renderLogImpulseModal() {
 
     <!-- Modal Form -->
     <form id="gk-log-form" class="gk-log-form">
+      ${isEdit ? `<input type="hidden" id="gk-edit-item-id" value="${escapeHtml(itemToEdit.id)}">` : ''}
       <!-- Section 1: Item & Price -->
       <div class="gk-form-section">
         <div class="form-row" style="display:flex;gap:12px;flex-wrap:wrap">
           <div class="form-group" style="flex:2;min-width:200px">
             <label class="field-label" for="gk-input-name">Item Name *</label>
-            <input type="text" id="gk-input-name" class="field-input" placeholder="e.g. Sony WH-1000XM5, Retro Sneakers, Espresso Maker..." required autocomplete="off">
+            <input type="text" id="gk-input-name" class="field-input" placeholder="e.g. Sony WH-1000XM5, Retro Sneakers, Espresso Maker..." value="${isEdit ? escapeHtml(itemToEdit.name || '') : ''}" required autocomplete="off">
           </div>
           <div class="form-group" style="flex:1;min-width:130px">
             <label class="field-label" for="gk-input-price">Price (₹) *</label>
-            <input type="number" id="gk-input-price" class="field-input" placeholder="2999" min="1" step="any" required>
+            <input type="number" id="gk-input-price" class="field-input" placeholder="2999" min="1" step="any" value="${isEdit && itemToEdit.price != null ? itemToEdit.price : ''}" required>
           </div>
         </div>
 
@@ -1692,7 +1791,7 @@ export function renderLogImpulseModal() {
             <label class="field-label" for="gk-select-budget-cat">Budget Category</label>
             <select id="gk-select-budget-cat" class="field-input">
               ${categories.map(c => `
-                <option value="${c.name}" ${c.id === 'shopping' ? 'selected' : ''}>
+                <option value="${c.name}" ${(c.name === currentBudgetCat || (!isEdit && c.id === 'shopping')) ? 'selected' : ''}>
                   ${c.emoji || '🏷️'} ${c.name}
                 </option>
               `).join('')}
@@ -1703,10 +1802,11 @@ export function renderLogImpulseModal() {
           <div class="form-group" style="flex:1;min-width:160px">
             <label class="field-label">Cooling Period</label>
             <select id="gk-select-cooling-hours" class="field-input">
-              <option value="24">24 Hours (1 Day)</option>
-              <option value="48" selected>48 Hours (Standard — Recommended)</option>
-              <option value="72">72 Hours (3 Days — Weekend reflection)</option>
-              <option value="168">7 Days (Major investments &gt; ₹5,000)</option>
+              ${coolingOptions.map(opt => `
+                <option value="${opt.value}" ${opt.value === currentCoolingHours ? 'selected' : ''}>
+                  ${opt.label}
+                </option>
+              `).join('')}
             </select>
           </div>
         </div>
@@ -1716,16 +1816,19 @@ export function renderLogImpulseModal() {
       <div class="gk-form-section">
         <label class="field-label" style="margin-bottom:8px">Gatekeeper Archetype (Impulse Origin) *</label>
         <div class="gk-archetypes-grid">
-          ${GATEKEEPER_ARCHETYPES.map((arch, index) => `
-            <label class="gk-arch-card ${index === 0 ? 'selected' : ''}" data-arch="${arch.id}">
-              <input type="radio" name="gatekeeperCategory" value="${arch.id}" ${index === 0 ? 'checked' : ''} style="display:none">
+          ${GATEKEEPER_ARCHETYPES.map((arch, index) => {
+            const isSelected = isEdit ? (arch.id === currentArchetype) : (index === 0);
+            return `
+            <label class="gk-arch-card ${isSelected ? 'selected' : ''}" data-arch="${arch.id}">
+              <input type="radio" name="gatekeeperCategory" value="${arch.id}" ${isSelected ? 'checked' : ''} style="display:none">
               <div class="gk-arch-card-top">
                 <span class="gk-arch-card-icon">${arch.icon}</span>
                 <span class="gk-arch-card-title">${arch.title}</span>
               </div>
               <div class="gk-arch-card-desc">${arch.desc}</div>
             </label>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
       </div>
 
@@ -1759,16 +1862,21 @@ export function renderLogImpulseModal() {
               </div>
             </div>
             <div class="gk-q-options">
-              ${QUESTION_CONFIG.frequency.options.map((opt, i) => `
-                <label class="gk-q-opt-pill ${i === 0 ? 'selected' : ''}">
-                  <input type="radio" name="q_frequency" value="${opt.value}" ${i === 0 ? 'checked' : ''} style="display:none">
+              ${QUESTION_CONFIG.frequency.options.map((opt, i) => {
+                const isSelected = isEdit
+                  ? (currentAnswers.frequency === opt.value || (currentAnswers.frequency && opt.value.startsWith(currentAnswers.frequency)))
+                  : (i === 0);
+                return `
+                <label class="gk-q-opt-pill ${isSelected ? 'selected' : ''}">
+                  <input type="radio" name="q_frequency" value="${opt.value}" ${isSelected ? 'checked' : ''} style="display:none">
                   <span class="gk-q-opt-icon">${opt.icon}</span>
                   <div class="gk-q-opt-text">
                     <span class="gk-q-opt-val">${opt.title}</span>
                     <span class="gk-q-opt-desc">${opt.desc}</span>
                   </div>
                 </label>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
 
@@ -1782,16 +1890,21 @@ export function renderLogImpulseModal() {
               </div>
             </div>
             <div class="gk-q-options">
-              ${QUESTION_CONFIG.redundancy.options.map((opt, i) => `
-                <label class="gk-q-opt-pill ${i === 0 ? 'selected' : ''}">
-                  <input type="radio" name="q_redundancy" value="${opt.value}" ${i === 0 ? 'checked' : ''} style="display:none">
+              ${QUESTION_CONFIG.redundancy.options.map((opt, i) => {
+                const isSelected = isEdit
+                  ? (currentAnswers.redundancy === opt.value || (currentAnswers.redundancy && opt.value.startsWith(currentAnswers.redundancy)))
+                  : (i === 0);
+                return `
+                <label class="gk-q-opt-pill ${isSelected ? 'selected' : ''}">
+                  <input type="radio" name="q_redundancy" value="${opt.value}" ${isSelected ? 'checked' : ''} style="display:none">
                   <span class="gk-q-opt-icon">${opt.icon}</span>
                   <div class="gk-q-opt-text">
                     <span class="gk-q-opt-val">${opt.title}</span>
                     <span class="gk-q-opt-desc">${opt.desc}</span>
                   </div>
                 </label>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
 
@@ -1805,16 +1918,21 @@ export function renderLogImpulseModal() {
               </div>
             </div>
             <div class="gk-q-options">
-              ${QUESTION_CONFIG.trigger.options.map((opt, i) => `
-                <label class="gk-q-opt-pill ${i === 0 ? 'selected' : ''}">
-                  <input type="radio" name="q_trigger" value="${opt.value}" ${i === 0 ? 'checked' : ''} style="display:none">
+              ${QUESTION_CONFIG.trigger.options.map((opt, i) => {
+                const isSelected = isEdit
+                  ? (currentAnswers.trigger === opt.value || (currentAnswers.trigger && opt.value.startsWith(currentAnswers.trigger)))
+                  : (i === 0);
+                return `
+                <label class="gk-q-opt-pill ${isSelected ? 'selected' : ''}">
+                  <input type="radio" name="q_trigger" value="${opt.value}" ${isSelected ? 'checked' : ''} style="display:none">
                   <span class="gk-q-opt-icon">${opt.icon}</span>
                   <div class="gk-q-opt-text">
                     <span class="gk-q-opt-val">${opt.title}</span>
                     <span class="gk-q-opt-desc">${opt.desc}</span>
                   </div>
                 </label>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
 
@@ -1828,16 +1946,21 @@ export function renderLogImpulseModal() {
               </div>
             </div>
             <div class="gk-q-options">
-              ${QUESTION_CONFIG.fit.options.map((opt, i) => `
-                <label class="gk-q-opt-pill ${i === 0 ? 'selected' : ''}">
-                  <input type="radio" name="q_fit" value="${opt.value}" ${i === 0 ? 'checked' : ''} style="display:none">
+              ${QUESTION_CONFIG.fit.options.map((opt, i) => {
+                const isSelected = isEdit
+                  ? (currentAnswers.fit === opt.value || (currentAnswers.fit && opt.value.startsWith(currentAnswers.fit)))
+                  : (i === 0);
+                return `
+                <label class="gk-q-opt-pill ${isSelected ? 'selected' : ''}">
+                  <input type="radio" name="q_fit" value="${opt.value}" ${isSelected ? 'checked' : ''} style="display:none">
                   <span class="gk-q-opt-icon">${opt.icon}</span>
                   <div class="gk-q-opt-text">
                     <span class="gk-q-opt-val">${opt.title}</span>
                     <span class="gk-q-opt-desc">${opt.desc}</span>
                   </div>
                 </label>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
         </div>
@@ -1846,19 +1969,39 @@ export function renderLogImpulseModal() {
       <!-- Submit & Cancel Buttons -->
       <div class="modal-footer" style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap">
         <button type="button" class="btn-secondary" id="gk-modal-cancel-btn">Cancel</button>
-        <button type="button" class="btn-secondary" id="gk-modal-future-btn" style="border-color:rgba(182, 137, 154, 0.45);color:var(--mauve)" title="Save to Future Reference List without cooling lock">
-          📌 Save to Future List
-        </button>
-        <button type="submit" class="btn-primary" id="gk-modal-submit-btn" style="flex:1;min-width:200px">
-          🛡️ Lock in Cooling Queue
-        </button>
+        ${!isEdit ? `
+          <button type="button" class="btn-secondary" id="gk-modal-future-btn" style="border-color:rgba(182, 137, 154, 0.45);color:var(--mauve)" title="Save to Future Reference List without cooling lock">
+            📌 Save to Future List
+          </button>
+          <button type="submit" class="btn-primary" id="gk-modal-submit-btn" style="flex:1;min-width:200px">
+            🛡️ Lock in Cooling Queue
+          </button>
+        ` : `
+          <button type="submit" class="btn-primary" id="gk-modal-submit-btn" style="flex:1;min-width:200px">
+            💾 Save Changes
+          </button>
+        `}
       </div>
     </form>
   </div>
   `;
 }
 
-export function openLogImpulseModal() {
+export function openEditImpulseModal(item) {
+  if (!item) return;
+  const ctx = getContext();
+  const body = document.getElementById('gatekeeper-modal-body');
+  if (body) {
+    body.innerHTML = renderLogImpulseModal(item);
+    ctx.openModal('gatekeeper-modal');
+    mountLogImpulseModal();
+  }
+}
+
+export function openLogImpulseModal(itemToEdit = null) {
+  if (itemToEdit) {
+    return openEditImpulseModal(itemToEdit);
+  }
   const ctx = getContext();
   const body = document.getElementById('gatekeeper-modal-body');
   if (body) {
@@ -1933,6 +2076,7 @@ export function mountLogImpulseModal() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    const editId = document.getElementById('gk-edit-item-id')?.value;
     const name = document.getElementById('gk-input-name')?.value.trim();
     const price = parseFloat(document.getElementById('gk-input-price')?.value) || 0;
     const gatekeeperCategory = document.querySelector('input[name="gatekeeperCategory"]:checked')?.value || 'Pure Dopamine / Treat';
@@ -1951,14 +2095,25 @@ export function mountLogImpulseModal() {
       return;
     }
 
-    await handleLogImpulse({
-      name,
-      price,
-      gatekeeperCategory,
-      budgetCategory,
-      coolingHours,
-      answers
-    });
+    if (editId) {
+      await handleEditImpulse(editId, {
+        name,
+        price,
+        gatekeeperCategory,
+        budgetCategory,
+        coolingHours,
+        answers
+      });
+    } else {
+      await handleLogImpulse({
+        name,
+        price,
+        gatekeeperCategory,
+        budgetCategory,
+        coolingHours,
+        answers
+      });
+    }
   });
 
   // Save directly to Future List handler
@@ -1995,3 +2150,9 @@ export function mountLogImpulseModal() {
     });
   });
 }
+
+if (typeof window !== 'undefined') {
+  window.openEditImpulseModal = openEditImpulseModal;
+  window.openLogImpulseModal = openLogImpulseModal;
+}
+

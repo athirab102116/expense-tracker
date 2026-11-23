@@ -6,6 +6,7 @@ import {
   renderGatekeeper,
   mountGatekeeper,
   openLogImpulseModal,
+  openEditImpulseModal,
   updateGatekeeperBadge,
   getGatekeeperItems,
   isSampleImpulseBuy

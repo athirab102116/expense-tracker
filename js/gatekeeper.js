@@ -7,6 +7,9 @@ let _countdownInterval = null;
 let _currentFilter = 'all';
 let _currentArchetype = 'all';
 let _searchQuery = '';
+let _currentViewMode = 'preview'; // 'preview' (ranked comparison preview) | 'cards' (standard grid)
+let _previewSort = 'points_desc'; // 'points_desc' | 'points_asc' | 'price_desc' | 'price_asc' | 'cooling'
+let _expandedItemIds = new Set(); // Stores IDs of items currently expanded in preview mode
 
 export function initGatekeeper(context) {
   _ctx = context;
@@ -672,15 +675,37 @@ export async function renderGatekeeper() {
     );
   }
 
-  // Sort: Ready first, then cooling (closest unlock first), then future, then recent
-  filtered.sort((a, b) => {
-    if (a.status === 'ready' && b.status !== 'ready') return -1;
-    if (b.status === 'ready' && a.status !== 'ready') return 1;
-    if (a.status === 'cooling' && b.status === 'cooling') {
-      return new Date(a.unlockAt) - new Date(b.unlockAt);
-    }
-    return new Date(b.createdAt) - new Date(a.createdAt);
-  });
+  // Sort items according to view mode
+  if (_currentViewMode === 'preview') {
+    filtered.sort((a, b) => {
+      if (_previewSort === 'points_desc') {
+        const diff = (Number(b.utilityScore) || 0) - (Number(a.utilityScore) || 0);
+        if (diff !== 0) return diff;
+        return (Number(a.price) || 0) - (Number(b.price) || 0);
+      } else if (_previewSort === 'points_asc') {
+        const diff = (Number(a.utilityScore) || 0) - (Number(b.utilityScore) || 0);
+        if (diff !== 0) return diff;
+        return (Number(b.price) || 0) - (Number(a.price) || 0);
+      } else if (_previewSort === 'price_desc') {
+        return (Number(b.price) || 0) - (Number(a.price) || 0);
+      } else if (_previewSort === 'price_asc') {
+        return (Number(a.price) || 0) - (Number(b.price) || 0);
+      } else if (_previewSort === 'cooling') {
+        return new Date(a.unlockAt || 0) - new Date(b.unlockAt || 0);
+      }
+      return (Number(b.utilityScore) || 0) - (Number(a.utilityScore) || 0);
+    });
+  } else {
+    // Standard cards sort: Ready first, then cooling (closest unlock first), then future, then recent
+    filtered.sort((a, b) => {
+      if (a.status === 'ready' && b.status !== 'ready') return -1;
+      if (b.status === 'ready' && a.status !== 'ready') return 1;
+      if (a.status === 'cooling' && b.status === 'cooling') {
+        return new Date(a.unlockAt) - new Date(b.unlockAt);
+      }
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+  }
 
   return `
   <div class="gk-view-wrap">
@@ -800,6 +825,30 @@ export async function renderGatekeeper() {
       </div>
 
       <div class="gk-toolbar-right">
+        <!-- View Mode Toggle: Ranked Preview vs Cards Grid -->
+        <div class="gk-view-toggle-grp" role="group" aria-label="View format">
+          <button class="gk-view-mode-btn ${_currentViewMode === 'preview' ? 'active' : ''}" data-view="preview" title="Preview List ranked by points">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            <span>Ranked Preview</span>
+          </button>
+          <button class="gk-view-mode-btn ${_currentViewMode === 'cards' ? 'active' : ''}" data-view="cards" title="Cards grid view">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Cards</span>
+          </button>
+        </div>
+
         <!-- Archetype Filter -->
         <select id="gk-archetype-select" class="gk-select-filter" aria-label="Filter by archetype">
           <option value="all" ${_currentArchetype === 'all' ? 'selected' : ''}>All Archetypes</option>
@@ -820,11 +869,12 @@ export async function renderGatekeeper() {
       </div>
     </div>
 
-    <!-- Items Grid / Cards List -->
+    <!-- Items Content: Ranked Preview List or Cards Grid -->
     ${filtered.length === 0 ? renderEmptyState(items.length) : `
-      <div class="gk-cards-grid">
-        ${filtered.map(item => renderItemCard(item, ctx)).join('')}
-      </div>
+      ${_currentViewMode === 'preview'
+        ? renderPreviewList(filtered, ctx)
+        : `<div class="gk-cards-grid">${filtered.map(item => renderItemCard(item, ctx)).join('')}</div>`
+      }
     `}
   </div>
   `;
@@ -858,6 +908,216 @@ function renderEmptyState(totalItemsCount) {
       <p class="gk-empty-sub">Try changing the status tab, archetype dropdown, or search keyword.</p>
       <button class="btn-secondary-sm" id="gk-reset-filters-btn">Reset Filters</button>
     </div>
+  `;
+}
+
+// ─── Ranked Preview & Comparison List ─────────────────────────────────────────
+function renderPreviewList(filtered, ctx) {
+  if (!filtered || filtered.length === 0) return '';
+
+  // Calculate comparison statistics
+  const sortedByScore = [...filtered].sort((a, b) => (Number(b.utilityScore) || 0) - (Number(a.utilityScore) || 0));
+  const topItem = sortedByScore[0];
+  const avgScore = Math.round(filtered.reduce((sum, i) => sum + (Number(i.utilityScore) || 0), 0) / filtered.length);
+  const totalAmount = filtered.reduce((sum, i) => sum + (Number(i.price) || 0), 0);
+
+  // Best Value (highest utility points per Rupee)
+  const sortedByValue = [...filtered].sort((a, b) => {
+    const ratioA = (Number(a.utilityScore) || 0) / Math.max(Number(a.price) || 1, 1);
+    const ratioB = (Number(b.utilityScore) || 0) / Math.max(Number(b.price) || 1, 1);
+    return ratioB - ratioA;
+  });
+  const bestValueItem = sortedByValue[0];
+
+  const allExpanded = filtered.length > 0 && filtered.every(i => _expandedItemIds.has(i.id));
+
+  return `
+  <div class="gk-preview-wrap">
+    <!-- Comparison Insights Ribbon -->
+    <div class="gk-compare-summary card">
+      <div class="gk-compare-grid">
+        <div class="gk-compare-cell">
+          <div class="gk-compare-cell-lbl">🏆 Highest Utility Rank #1</div>
+          <div class="gk-compare-cell-title" title="${topItem ? topItem.name : ''}">${topItem ? topItem.name : '—'}</div>
+          <div class="gk-compare-cell-sub">
+            <strong class="text-brand">${topItem ? topItem.utilityScore : 0} pts</strong> · ${topItem ? ctx.fmt(topItem.price) : '₹0'}
+          </div>
+        </div>
+
+        <div class="gk-compare-cell">
+          <div class="gk-compare-cell-lbl">📊 Average Utility Score</div>
+          <div class="gk-compare-cell-val text-income">
+            ${avgScore} <span style="font-size:13px;font-weight:600;color:var(--text3)">/ 100</span>
+          </div>
+          <div class="gk-compare-cell-sub">Across ${filtered.length} compared impulse${filtered.length === 1 ? '' : 's'} (${ctx.fmt(totalAmount)})</div>
+        </div>
+
+        <div class="gk-compare-cell">
+          <div class="gk-compare-cell-lbl">💡 Best Value-For-Money Ratio</div>
+          <div class="gk-compare-cell-title" title="${bestValueItem ? bestValueItem.name : ''}">${bestValueItem ? bestValueItem.name : '—'}</div>
+          <div class="gk-compare-cell-sub">
+            <strong class="text-gold">${bestValueItem ? bestValueItem.utilityScore : 0} pts</strong> · ${bestValueItem ? ctx.fmt(bestValueItem.price) : '₹0'}
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls row in comparison bar -->
+      <div class="gk-compare-controls-bar">
+        <div class="gk-compare-sort-box">
+          <label for="gk-preview-sort-select" class="gk-sort-lbl">Rank by:</label>
+          <select id="gk-preview-sort-select" class="gk-select-filter-sm" aria-label="Sort comparison items">
+            <option value="points_desc" ${_previewSort === 'points_desc' ? 'selected' : ''}>Points: High → Low (Ranked #1)</option>
+            <option value="points_asc" ${_previewSort === 'points_asc' ? 'selected' : ''}>Points: Low → High</option>
+            <option value="price_desc" ${_previewSort === 'price_desc' ? 'selected' : ''}>Price: High → Low</option>
+            <option value="price_asc" ${_previewSort === 'price_asc' ? 'selected' : ''}>Price: Low → High</option>
+            <option value="cooling" ${_previewSort === 'cooling' ? 'selected' : ''}>Cooling Time Remaining</option>
+          </select>
+        </div>
+
+        <div class="gk-compare-right-actions">
+          <button id="gk-expand-all-btn" class="btn-ghost-sm gk-expand-all-btn" title="Toggle detailed options for all items">
+            ${allExpanded ? '▲ Collapse All' : '▼ Expand &amp; Compare All'}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ranked Preview List Container -->
+    <div class="gk-preview-list-container">
+      <div class="gk-preview-table-header">
+        <div class="gk-th-rank">Rank &amp; Points</div>
+        <div class="gk-th-item">Impulse Item &amp; Archetype</div>
+        <div class="gk-th-answers">Diagnostic Answers Preview</div>
+        <div class="gk-th-price">Price &amp; Ratio</div>
+        <div class="gk-th-status">Status</div>
+        <div class="gk-th-action">Options</div>
+      </div>
+
+      <div class="gk-preview-rows-list">
+        ${filtered.map((item, index) => renderPreviewItemRow(item, index, ctx)).join('')}
+      </div>
+    </div>
+  </div>
+  `;
+}
+
+function renderPreviewItemRow(item, index, ctx) {
+  const isExpanded = _expandedItemIds.has(item.id);
+  const archetype = GATEKEEPER_ARCHETYPES.find(a => a.id === item.gatekeeperCategory) || GATEKEEPER_ARCHETYPES[0];
+  const { pct, remaining, isReady, formatted } = getCoolingProgress(item.createdAt, item.unlockAt);
+  const tier = getUtilityTier(item.utilityScore);
+  const answers = item.answers || {};
+  const effectiveStatus = (item.status === 'cooling' && isReady) ? 'ready' : item.status;
+
+  // Rank Badge
+  let rankClass = 'rank-pill-normal';
+  let rankLabel = `#${index + 1}`;
+  if (_previewSort === 'points_desc') {
+    if (index === 0) { rankClass = 'rank-pill-gold'; rankLabel = '🥇 #1'; }
+    else if (index === 1) { rankClass = 'rank-pill-silver'; rankLabel = '🥈 #2'; }
+    else if (index === 2) { rankClass = 'rank-pill-bronze'; rankLabel = '🥉 #3'; }
+  }
+
+  // Cost per point
+  const costPerPt = (item.price / Math.max(item.utilityScore, 1)).toFixed(0);
+
+  // Status Badge markup
+  let statusBadge = '';
+  if (effectiveStatus === 'cooling') {
+    statusBadge = `<span class="gk-status-badge status-cooling gk-timer-val" data-unlock="${item.unlockAt}" data-created="${item.createdAt}">⏳ ${formatted}</span>`;
+  } else if (effectiveStatus === 'ready') {
+    statusBadge = `<span class="gk-status-badge status-ready">✨ Ready</span>`;
+  } else if (effectiveStatus === 'future') {
+    statusBadge = `<span class="gk-status-badge status-future">📌 Future</span>`;
+  } else if (effectiveStatus === 'let_go') {
+    statusBadge = `<span class="gk-status-badge status-let-go">🛡️ Saved</span>`;
+  } else if (effectiveStatus === 'purchased') {
+    statusBadge = `<span class="gk-status-badge status-purchased">💳 Bought</span>`;
+  }
+
+  return `
+  <div class="gk-preview-card card ${isExpanded ? 'is-expanded' : ''}" data-id="${item.id}">
+    <div class="gk-preview-row" data-id="${item.id}" role="button" tabindex="0" aria-expanded="${isExpanded}" title="Click to view all options for ${item.name}">
+      
+      <!-- Rank & Points Column -->
+      <div class="gk-th-rank gk-cell-rank">
+        <div class="gk-rank-badge ${rankClass}">${rankLabel}</div>
+        <div class="gk-points-meter">
+          <div class="gk-points-val-box" style="color:${tier.color};background:${tier.badgeBg};border:1px solid ${tier.borderColor}">
+            <strong>${item.utilityScore}</strong><span class="gk-points-den">/100</span>
+          </div>
+          <div class="gk-points-bar-mini" title="${item.utilityScore} points (${tier.label})">
+            <div class="gk-points-fill-mini" style="width:${item.utilityScore}%;background:${tier.color}"></div>
+          </div>
+          <span class="gk-tier-tag" style="color:${tier.color}">${tier.shortLabel}</span>
+        </div>
+      </div>
+
+      <!-- Item Info Column -->
+      <div class="gk-th-item gk-cell-item">
+        <h4 class="gk-preview-item-title" title="${item.name}">${item.name}</h4>
+        <div class="gk-preview-pills-row">
+          <span class="gk-arch-pill-sm" style="color:${archetype.color};background:${archetype.bg};border:1px solid ${archetype.border}">
+            ${archetype.icon} ${archetype.badge}
+          </span>
+          <span class="gk-budget-pill-sm">
+            🏷️ ${item.budgetCategory || 'Shopping'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Diagnostic Answers Preview -->
+      <div class="gk-th-answers gk-cell-answers">
+        <div class="gk-factor-chips-wrap">
+          <span class="gk-chip" title="Usage: ${answers.frequency || 'Daily (+25)'}">
+            <span class="gk-chip-k">Use:</span> ${answers.frequency || 'Daily (+25)'}
+          </span>
+          <span class="gk-chip" title="Need/Redundancy: ${answers.redundancy || 'No (+25)'}">
+            <span class="gk-chip-k">Need:</span> ${answers.redundancy || 'No (+25)'}
+          </span>
+          <span class="gk-chip" title="Trigger: ${answers.trigger || 'Planned (+25)'}">
+            <span class="gk-chip-k">Trigger:</span> ${answers.trigger || 'Planned (+25)'}
+          </span>
+          <span class="gk-chip" title="Financial Fit: ${answers.fit || 'Easy (+25)'}">
+            <span class="gk-chip-k">Fit:</span> ${answers.fit || 'Easy (+25)'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Price & Efficiency Ratio Column -->
+      <div class="gk-th-price gk-cell-price">
+        <div class="gk-preview-amount">${ctx.fmt(item.price)}</div>
+        <div class="gk-preview-ratio" title="Cost per utility point">₹${Number(costPerPt).toLocaleString('en-IN')}/pt</div>
+      </div>
+
+      <!-- Status Column -->
+      <div class="gk-th-status gk-cell-status">
+        ${statusBadge}
+      </div>
+
+      <!-- Expand Trigger Column -->
+      <div class="gk-th-action gk-cell-action">
+        <button class="btn-secondary-sm gk-row-expand-btn" data-id="${item.id}" title="Toggle detailed options">
+          ${isExpanded ? 'Hide ▲' : 'Options ▼'}
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Expanded Item Card Panel with ALL options available -->
+    ${isExpanded ? `
+      <div class="gk-preview-detail-drawer">
+        <div class="gk-drawer-top-banner">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:13px;font-weight:700;color:var(--text)">All Available Options for "${item.name}"</span>
+            <span class="gk-score-pill" style="color:${tier.color};background:${tier.badgeBg};border-color:${tier.borderColor}">Rank #${index + 1} · ${item.utilityScore}/100 pts</span>
+          </div>
+          <button class="btn-ghost-sm gk-close-drawer-btn" data-id="${item.id}" title="Collapse options">✕ Close</button>
+        </div>
+        ${renderItemCard(item, ctx)}
+      </div>
+    ` : ''}
+  </div>
   `;
 }
 
@@ -1106,6 +1366,80 @@ export function mountGatekeeper() {
     });
   });
 
+  // View Mode Toggle (Ranked Preview vs Cards)
+  document.querySelectorAll('.gk-view-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _currentViewMode = btn.dataset.view || 'preview';
+      playNav();
+      ctx.renderView();
+    });
+  });
+
+  // Sort Ranking Dropdown in Preview Mode
+  document.getElementById('gk-preview-sort-select')?.addEventListener('change', (e) => {
+    _previewSort = e.target.value;
+    playNav();
+    ctx.renderView();
+  });
+
+  // Expand / Collapse All in Preview Mode
+  document.getElementById('gk-expand-all-btn')?.addEventListener('click', () => {
+    const allCards = Array.from(document.querySelectorAll('.gk-preview-card'));
+    const allIds = allCards.map(c => c.dataset.id).filter(Boolean);
+    const allExpanded = allIds.length > 0 && allIds.every(id => _expandedItemIds.has(id));
+    if (allExpanded) {
+      _expandedItemIds.clear();
+    } else {
+      allIds.forEach(id => _expandedItemIds.add(id));
+    }
+    playNav();
+    ctx.renderView();
+  });
+
+  // Preview Row Expansion Toggle (Click anywhere on the preview row or press Enter/Space)
+  document.querySelectorAll('.gk-preview-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('button, select, input, a, .gk-action-btn')) return;
+      const id = row.dataset.id;
+      if (!id) return;
+      if (_expandedItemIds.has(id)) {
+        _expandedItemIds.delete(id);
+      } else {
+        _expandedItemIds.add(id);
+      }
+      playNav();
+      ctx.renderView();
+    });
+
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const id = row.dataset.id;
+        if (!id) return;
+        if (_expandedItemIds.has(id)) _expandedItemIds.delete(id);
+        else _expandedItemIds.add(id);
+        playNav();
+        ctx.renderView();
+      }
+    });
+  });
+
+  // Expand / Close Drawer Buttons
+  document.querySelectorAll('.gk-row-expand-btn, .gk-close-drawer-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      if (_expandedItemIds.has(id)) {
+        _expandedItemIds.delete(id);
+      } else {
+        _expandedItemIds.add(id);
+      }
+      playNav();
+      ctx.renderView();
+    });
+  });
+
   // Filter Trigger
   document.querySelectorAll('.gk-filter-pill-trigger').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1127,7 +1461,7 @@ export function mountGatekeeper() {
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       _searchQuery = e.target.value;
-      const cards = document.querySelectorAll('.gk-card');
+      const cards = document.querySelectorAll('.gk-card, .gk-preview-card');
       const q = _searchQuery.toLowerCase().trim();
       cards.forEach(c => {
         const text = c.textContent.toLowerCase();

@@ -4323,72 +4323,6 @@ async function renderSettings() {
     </div>
   </div>
 
-  <!-- Cards & Accounts Overview -->
-  <div class="settings-section card">
-    <div class="settings-section-title">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px">
-        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-        <line x1="2" y1="10" x2="22" y2="10"></line>
-      </svg>
-      Cards &amp; Accounts
-    </div>
-    <p class="hint-text" style="margin-bottom:12px">Your primary payment cards and linked banking accounts.</p>
-    
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-      <!-- SBI Credit Card -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="width:10px;height:10px;border-radius:50%;background:#1E56A0"></span>
-          <div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--text)">SBI Credit Card</div>
-            <div style="font-size:11.5px;color:var(--text3)">Exclusively Counted in Credit Card Tracking &amp; Carryover</div>
-          </div>
-        </div>
-        <span class="bank-pill bank-sbi-credit-card">Credit Bill</span>
-      </div>
-
-      <!-- Slice Savings Account -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="width:10px;height:10px;border-radius:50%;background:#4FD1C5"></span>
-          <div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice Savings Account</div>
-            <div style="font-size:11.5px;color:var(--text3)">Savings Account / UPI · Direct Bank Outflow (Not in Credit Bill)</div>
-          </div>
-        </div>
-        <span class="bank-pill bank-slice-savings-account">Savings / UPI</span>
-      </div>
-
-      <!-- Slice Card / Other -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="width:10px;height:10px;border-radius:50%;background:#805AD5"></span>
-          <div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--text)">Slice / Other Cards</div>
-            <div style="font-size:11.5px;color:var(--text3)">Regular Expenses (Not counted in Credit Card Tracking)</div>
-          </div>
-        </div>
-        <span class="bank-pill bank-slice">Regular Expense</span>
-      </div>
-
-      <!-- SBI Savings Account -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="width:10px;height:10px;border-radius:50%;background:#3B82F6"></span>
-          <div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--text)">SBI Savings Account</div>
-            <div style="font-size:11.5px;color:var(--text3)">State Bank of India · Direct Balance Expense</div>
-          </div>
-        </div>
-        <span class="bank-pill bank-sbi-savings-account">Savings / UPI</span>
-      </div>
-    </div>
-
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn-primary-sm" id="btn-settings-view-cards" type="button">💳 Open SBI Credit Card Tracker</button>
-    </div>
-  </div>
-
   <!-- Gmail Sync -->
   <div class="settings-section card">
     <div class="settings-section-title">📧 Gmail Sync (All Bank Accounts)</div>
@@ -4540,14 +4474,6 @@ function mountSettings() {
     await db.setSetting('gmail_hint', null);
     showToast('Gmail disconnected');
     renderView();
-  });
-
-  // Cards & Accounts buttons in settings
-  document.getElementById('btn-settings-view-cards')?.addEventListener('click', () => {
-    setView('cards');
-  });
-  document.getElementById('btn-settings-manage-cards')?.addEventListener('click', () => {
-    openCardManageModal();
   });
 
   // Sound toggle in settings

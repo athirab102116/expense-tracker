@@ -1542,89 +1542,36 @@ async function bootstrap() {
   state.categories = await db.getAll('categories');
   state.merchantRules = await db.getAll('merchant_rules');
 
-  // Seed initial Gatekeeper sample items if store is empty
+  // Remove all unrecorded sample/demo impulse buy items and prevent any external seeding
   try {
     const gkItems = await db.getAll('gatekeeper');
-    if (!gkItems || gkItems.length === 0) {
-      const nowMs = Date.now();
-      const sampleGk = [
-        {
-          id: 'gk-sample-1',
-          name: 'Sony WH-1000XM5 Noise-Cancelling Headphones',
-          price: 19990,
-          gatekeeperCategory: 'Core Upgrade',
-          budgetCategory: 'Shopping',
-          coolingHours: 48,
-          createdAt: new Date(nowMs - 16 * 3600 * 1000).toISOString(),
-          unlockAt: new Date(nowMs + 32 * 3600 * 1000).toISOString(),
-          utilityScore: 85,
-          answers: {
-            frequency: 'Daily (+25)',
-            redundancy: 'Upgrade (+10)',
-            trigger: 'Planned (+25)',
-            fit: 'Easy (+25)'
-          },
-          status: 'cooling'
-        },
-        {
-          id: 'gk-sample-2',
-          name: 'Limited Edition Streetwear Vintage Hoodie',
-          price: 4499,
-          gatekeeperCategory: 'Pure Dopamine / Treat',
-          budgetCategory: 'Shopping',
-          coolingHours: 48,
-          createdAt: new Date(nowMs - 50 * 3600 * 1000).toISOString(),
-          unlockAt: new Date(nowMs - 2 * 3600 * 1000).toISOString(),
-          utilityScore: 35,
-          answers: {
-            frequency: 'Weekly (+15)',
-            redundancy: 'Duplicate (-10)',
-            trigger: 'Feed/Ad (0)',
-            fit: 'Tight (+10)'
-          },
-          status: 'ready'
-        },
-        {
-          id: 'gk-sample-3',
-          name: 'Ambient Warm Desk Flame Diffuser',
-          price: 2199,
-          gatekeeperCategory: 'Aesthetic / Lifestyle',
-          budgetCategory: 'Shopping',
-          coolingHours: 48,
-          createdAt: new Date(nowMs - 96 * 3600 * 1000).toISOString(),
-          unlockAt: new Date(nowMs - 48 * 3600 * 1000).toISOString(),
-          utilityScore: 25,
-          answers: {
-            frequency: 'Rare (+5)',
-            redundancy: 'No (+25)',
-            trigger: 'Stress/Bored (-5)',
-            fit: 'Stretch (-10)'
-          },
-          status: 'let_go'
-        },
-        {
-          id: 'gk-sample-4',
-          name: 'Keychron Q1 Pro Custom Mechanical Keyboard',
-          price: 16499,
-          gatekeeperCategory: 'Goal / Skill Enabler',
-          budgetCategory: 'Shopping',
-          coolingHours: 48,
-          createdAt: new Date(nowMs - 72 * 3600 * 1000).toISOString(),
-          unlockAt: new Date(nowMs - 24 * 3600 * 1000).toISOString(),
-          utilityScore: 70,
-          answers: {
-            frequency: 'Daily (+25)',
-            redundancy: 'Upgrade (+10)',
-            trigger: 'Planned (+25)',
-            fit: 'Tight (+10)'
-          },
-          status: 'future',
-          movedToFutureAt: new Date(nowMs - 20 * 3600 * 1000).toISOString(),
-          futureNote: 'Wait for Diwali sale or work bonus before purchasing'
+    const sampleIds = ['gk-sample-1', 'gk-sample-2', 'gk-sample-3', 'gk-sample-4', 'demo-gk-1', 'demo-gk-2', 'demo-gk-3', 'demo-gk-4'];
+    if (gkItems && gkItems.length > 0) {
+      for (const item of gkItems) {
+        if (
+          sampleIds.includes(item.id) ||
+          (typeof item.id === 'string' && (item.id.startsWith('gk-sample-') || item.id.startsWith('demo-gk-')))
+        ) {
+          await db.delete('gatekeeper', item.id).catch(() => {});
         }
-      ];
-      for (const g of sampleGk) await db.put('gatekeeper', g);
+      }
     }
+    if (typeof localStorage !== 'undefined') {
+      const backup = localStorage.getItem('gatekeeper_items');
+      if (backup) {
+        try {
+          const parsed = JSON.parse(backup);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(i =>
+              !sampleIds.includes(i.id) &&
+              !(typeof i.id === 'string' && (i.id.startsWith('gk-sample-') || i.id.startsWith('demo-gk-')))
+            );
+            localStorage.setItem('gatekeeper_items', JSON.stringify(cleaned));
+          }
+        } catch (_) {}
+      }
+    }
+    updateGatekeeperBadge();
   } catch (_) {}
 
   // Smart active month selection:
@@ -1696,87 +1643,7 @@ async function loadDemoData() {
   ];
   for (const b of budgets) await db.put('budgets', b);
 
-  // Sample Gatekeeper items
-  const nowMs = Date.now();
-  const sampleGk = [
-    {
-      id: 'demo-gk-1',
-      name: 'Sony WH-1000XM5 Noise-Cancelling Headphones',
-      price: 19990,
-      gatekeeperCategory: 'Core Upgrade',
-      budgetCategory: 'Shopping',
-      coolingHours: 48,
-      createdAt: new Date(nowMs - 16 * 3600 * 1000).toISOString(),
-      unlockAt: new Date(nowMs + 32 * 3600 * 1000).toISOString(),
-      utilityScore: 85,
-      answers: {
-        frequency: 'Daily (+25)',
-        redundancy: 'Upgrade (+10)',
-        trigger: 'Planned (+25)',
-        fit: 'Easy (+25)'
-      },
-      status: 'cooling'
-    },
-    {
-      id: 'demo-gk-2',
-      name: 'Limited Streetwear Vintage Oversized Hoodie',
-      price: 4499,
-      gatekeeperCategory: 'Pure Dopamine / Treat',
-      budgetCategory: 'Shopping',
-      coolingHours: 48,
-      createdAt: new Date(nowMs - 50 * 3600 * 1000).toISOString(),
-      unlockAt: new Date(nowMs - 2 * 3600 * 1000).toISOString(),
-      utilityScore: 35,
-      answers: {
-        frequency: 'Weekly (+15)',
-        redundancy: 'Duplicate (-10)',
-        trigger: 'Feed/Ad (0)',
-        fit: 'Tight (+10)'
-      },
-      status: 'ready'
-    },
-    {
-      id: 'demo-gk-3',
-      name: 'Ambient Warm Desk Flame Diffuser',
-      price: 2199,
-      gatekeeperCategory: 'Aesthetic / Lifestyle',
-      budgetCategory: 'Shopping',
-      coolingHours: 48,
-      createdAt: new Date(nowMs - 96 * 3600 * 1000).toISOString(),
-      unlockAt: new Date(nowMs - 48 * 3600 * 1000).toISOString(),
-      utilityScore: 25,
-      answers: {
-        frequency: 'Rare (+5)',
-        redundancy: 'No (+25)',
-        trigger: 'Stress/Bored (-5)',
-        fit: 'Stretch (-10)'
-      },
-      status: 'let_go'
-    },
-    {
-      id: 'demo-gk-4',
-      name: 'Keychron Q1 Pro Custom Mechanical Keyboard',
-      price: 16499,
-      gatekeeperCategory: 'Goal / Skill Enabler',
-      budgetCategory: 'Shopping',
-      coolingHours: 48,
-      createdAt: new Date(nowMs - 72 * 3600 * 1000).toISOString(),
-      unlockAt: new Date(nowMs - 24 * 3600 * 1000).toISOString(),
-      utilityScore: 70,
-      answers: {
-        frequency: 'Daily (+25)',
-        redundancy: 'Upgrade (+10)',
-        trigger: 'Planned (+25)',
-        fit: 'Tight (+10)'
-      },
-      status: 'future',
-      movedToFutureAt: new Date(nowMs - 20 * 3600 * 1000).toISOString(),
-      futureNote: 'Wait for Diwali sale or work bonus before purchasing'
-    }
-  ];
-  for (const gk of sampleGk) {
-    try { await db.put('gatekeeper', gk); } catch (_) {}
-  }
+  // Note: Gatekeeper items are strictly user-recorded only. Never seed sample impulse buys.
   updateGatekeeperBadge();
 
   await db.setSetting('demo_loaded', true);
@@ -1802,9 +1669,15 @@ async function clearDemoData() {
   );
   for (const b of demoBudgets) await db.delete('budgets', b.id);
 
-  for (const id of ['demo-gk-1', 'demo-gk-2', 'demo-gk-3']) {
-    try { await db.delete('gatekeeper', id); } catch (_) {}
-  }
+  // Ensure any sample impulse buys are completely cleaned up
+  try {
+    const gkAll = await db.getAll('gatekeeper');
+    for (const g of gkAll) {
+      if (typeof g.id === 'string' && (g.id.startsWith('demo-gk-') || g.id.startsWith('gk-sample-'))) {
+        await db.delete('gatekeeper', g.id).catch(() => {});
+      }
+    }
+  } catch (_) {}
   updateGatekeeperBadge();
 
   await db.setSetting('demo_loaded', false);

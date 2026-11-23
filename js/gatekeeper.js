@@ -311,6 +311,30 @@ export async function getGatekeeperItems() {
 
   if (!Array.isArray(items)) items = [];
 
+  // Strictly filter out any sample/demo impulse buys and delete them permanently
+  const sampleItems = items.filter(it =>
+    it && (
+      (typeof it.id === 'string' && (it.id.startsWith('gk-sample-') || it.id.startsWith('demo-gk-'))) ||
+      ['gk-sample-1','gk-sample-2','gk-sample-3','gk-sample-4','demo-gk-1','demo-gk-2','demo-gk-3','demo-gk-4'].includes(it.id)
+    )
+  );
+  if (sampleItems.length > 0) {
+    items = items.filter(it =>
+      it && !(
+        (typeof it.id === 'string' && (it.id.startsWith('gk-sample-') || it.id.startsWith('demo-gk-'))) ||
+        ['gk-sample-1','gk-sample-2','gk-sample-3','gk-sample-4','demo-gk-1','demo-gk-2','demo-gk-3','demo-gk-4'].includes(it.id)
+      )
+    );
+    if (typeof indexedDB !== 'undefined') {
+      for (const s of sampleItems) {
+        try { await db.delete('gatekeeper', s.id); } catch (_) {}
+      }
+    }
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('gatekeeper_items', JSON.stringify(items)); } catch (_) {}
+    }
+  }
+
   // Check cooling items for unlock transition
   let changed = false;
   const now = Date.now();

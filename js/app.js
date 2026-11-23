@@ -1931,14 +1931,6 @@ async function renderDashboard() {
   const monthBudgets = getBudgetsForMonth(allBudgets, month);
   const totalBudgeted = monthBudgets.reduce((s, b) => s + b.amount, 0);
 
-  // Gmail Sync status for Expense Tracker Dashboard
-  const gmailToken = await db.getSetting('gmail_token', null);
-  const gmailExpiry = await db.getSetting('gmail_token_expiry', 0);
-  const gmailConnected = !!(gmailToken && Date.now() < gmailExpiry);
-  const gmailLastSync = await db.getSetting('gmail_last_sync', null);
-  const gmailStartDate = await db.getSetting('gmail_start_date', '2026-10-07');
-  const gmailHint = await db.getSetting('gmail_hint', '');
-
   // Separate Income (Credit), Living Expenses (Debit excluding Savings), and Savings (Debit in Savings category)
   const incomeExpenses = expenses.filter(e => e.type === 'credit');
   const creditIncomeTotal = incomeExpenses.reduce((s, e) => s + e.amount, 0);
@@ -1972,20 +1964,55 @@ async function renderDashboard() {
     byCat[e.category] = (byCat[e.category] || 0) + e.amount;
   }
 
-  const catLegendRows = Object.entries(byCat)
-    .sort((a, b) => b[1] - a[1])
-    .map(([id, amt]) => {
-      const cat = getCat(id);
-      const pct = expenseTotal > 0 ? ((amt / expenseTotal) * 100).toFixed(1) : '0';
-      return `
-        <div class="cat-breakdown-row" data-cat="${id}" title="Click to view ${cat.name} transactions">
-          <span class="cat-dot" style="background:${cat.color}"></span>
-          <span class="cat-name-text" style="display:inline-flex;align-items:center;gap:6px">${getCatBadge(cat, 13)} <span>${cat.name}</span></span>
-          <span class="cat-pct-pill">${pct}%</span>
-          <span class="cat-amt-text">${fmtCurrency(amt, false)}</span>
+  const catEntries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  const daysCurrent = Math.max(1, new Date().getDate());
+  const avgDaily = expenseTotal / daysCurrent;
+
+  const topCatEntry = catEntries[0];
+  const topCat = topCatEntry ? getCat(topCatEntry[0]) : null;
+  const topCatPct = (topCatEntry && expenseTotal > 0) ? ((topCatEntry[1] / expenseTotal) * 100).toFixed(1) : 0;
+
+  const catLegendRows = catEntries.map(([id, amt]) => {
+    const cat = getCat(id);
+    const pct = expenseTotal > 0 ? ((amt / expenseTotal) * 100).toFixed(1) : '0';
+    const catTxns = debitExpenses.filter(e => e.category === id);
+    const catBudget = monthBudgets.find(b => b.category === id)?.amount || 0;
+
+    let budgetInfoHtml = '';
+    if (catBudget > 0) {
+      const remaining = catBudget - amt;
+      if (remaining < 0) {
+        budgetInfoHtml = `<span class="cat-sub-budget cat-budget-over">⚠️ Over by ${fmtCurrency(Math.abs(remaining), true)}</span>`;
+      } else if (remaining === 0) {
+        budgetInfoHtml = `<span class="cat-sub-budget cat-budget-ok">100% of ${fmtCurrency(catBudget, true)} budget</span>`;
+      } else {
+        budgetInfoHtml = `<span class="cat-sub-budget cat-budget-ok">${fmtCurrency(remaining, true)} left</span>`;
+      }
+    }
+
+    return `
+      <div class="cat-breakdown-row" data-cat="${id}" role="button" tabindex="0" title="Click to view all ${catTxns.length} ${cat.name} transactions">
+        <div class="cat-row-top">
+          <div class="cat-row-left">
+            <span class="cat-dot" style="background:${cat.color}"></span>
+            <span class="cat-icon-badge">${getCatBadge(cat, 15)}</span>
+            <span class="cat-name-text">${cat.name}</span>
+          </div>
+          <div class="cat-row-right">
+            <span class="cat-amt-text">${fmtCurrency(amt, false)}</span>
+            <span class="cat-pct-pill">${pct}%</span>
+          </div>
         </div>
-      `;
-    }).join('');
+        <div class="cat-progress-track">
+          <div class="cat-progress-fill" style="width:${pct}%;background:${cat.color}"></div>
+        </div>
+        <div class="cat-row-sub">
+          <span class="cat-sub-txns">${catTxns.length} txn${catTxns.length !== 1 ? 's' : ''}</span>
+          ${budgetInfoHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
 
   // Find latest month with data if this month is empty
   let otherMonthBanner = '';
@@ -2128,14 +2155,22 @@ async function renderDashboard() {
 
   <!-- Interactive Charts & Analytics Grid -->
   <div class="analytics-grid">
-    <!-- Category Breakdown Donut Chart -->
-    <div class="dashboard-card">
+    <!-- Category Breakdown Card (Full Width Hero Analytics) -->
+    <div class="dashboard-card category-breakdown-card">
       <div class="card-header-row">
         <div>
-          <div class="card-heading">Category Breakdown</div>
-          <div class="card-subheading">${monthLabel(month)} Spending</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="card-heading" style="font-size:17px">Category Breakdown</span>
+            ${catEntries.length > 0 ? `
+              <span class="cat-count-badge">${catEntries.length} Categories</span>
+            ` : ''}
+          </div>
+          <div class="card-subheading">${monthLabel(month)} Spending Distribution &amp; Budget Health</div>
         </div>
-        <button class="btn-link" id="dash-view-all-txns-link" style="font-size:12px;font-weight:600">All Txns →</button>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn-secondary-sm" id="dash-view-budgets-link" style="font-size:12px;font-weight:600">Budgets 🎯</button>
+          <button class="btn-primary-sm" id="dash-view-all-txns-link" style="font-size:12px;font-weight:600">All Transactions →</button>
+        </div>
       </div>
 
       ${debitExpenses.length === 0 ? `
@@ -2146,110 +2181,34 @@ async function renderDashboard() {
         </div>
       ` : `
         <div class="donut-layout">
-          <div class="donut-canvas-wrap">
-            <canvas id="donutChart"></canvas>
-            <div class="donut-center-overlay">
-              <span class="donut-center-label">Total</span>
-              <span class="donut-center-amount">${fmtCurrency(expenseTotal, false)}</span>
+          <div class="donut-chart-section">
+            <div class="donut-canvas-wrap">
+              <canvas id="donutChart"></canvas>
+              <div class="donut-center-overlay">
+                <span class="donut-center-label">Total Spend</span>
+                <span class="donut-center-amount">${fmtCurrency(expenseTotal, false)}</span>
+                <span class="donut-center-count">${catEntries.length} Categories · ${debitExpenses.length} Txns</span>
+              </div>
             </div>
+            ${topCat ? `
+              <div class="donut-quick-metrics">
+                <div class="donut-metric-chip" title="Category with highest spending this month">
+                  <span class="donut-metric-lbl">Highest Spend</span>
+                  <span class="donut-metric-val">${topCat.emoji || '🏷️'} ${topCat.name} (${topCatPct}%)</span>
+                </div>
+                <div class="donut-metric-chip" title="Average living expense per day in ${monthLabel(month)}">
+                  <span class="donut-metric-lbl">Daily Average</span>
+                  <span class="donut-metric-val">${fmtCurrency(avgDaily, true)}</span>
+                </div>
+              </div>
+            ` : ''}
           </div>
+
           <div class="donut-legend-wrap" id="donut-legend-wrap">
             ${catLegendRows}
           </div>
         </div>
       `}
-    </div>
-
-    <!-- Gmail Auto-Sync Card (Integrated into Expense Tracker) -->
-    <div class="dashboard-card" id="dash-gmail-card">
-      <div class="card-header-row">
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:36px;height:36px;border-radius:10px;background:var(--brand-light);display:flex;align-items:center;justify-content:center;color:var(--brand);flex-shrink:0">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-              <polyline points="22,6 12,13 2,6"></polyline>
-            </svg>
-          </div>
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span class="card-heading">Gmail Sync</span>
-              <span class="cc-status-pill ${gmailConnected ? 'positive' : 'neutral'}" style="font-size:11px">
-                ${gmailConnected ? '● Connected' : '○ Not Connected'}
-              </span>
-            </div>
-            <div class="card-subheading">${gmailConnected && gmailHint ? gmailHint : 'Automatic Indian bank email parser'}</div>
-          </div>
-        </div>
-        ${gmailConnected ? `
-          <button class="btn-link" id="dash-gmail-disconnect-btn" style="font-size:12px;color:var(--text3)">Disconnect</button>
-        ` : ''}
-      </div>
-
-      <div style="margin-top:14px;font-size:12.5px;color:var(--text2);line-height:1.5">
-        Automatically import alerts from <strong>HDFC, SBI, ICICI, Axis, Kotak, Union Bank, Slice</strong>, and UPI debits &amp; credits. Duplicates are auto-skipped.
-      </div>
-
-      <div style="margin-top:16px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <label for="dash-gmail-start-date" style="font-size:11px;color:var(--text3);font-weight:600">Scan from date:</label>
-          <input type="date" id="dash-gmail-start-date" class="field-input" value="${gmailStartDate}" style="max-width:160px;font-size:12px;padding:6px 10px">
-        </div>
-
-        <div style="display:flex;align-items:flex-end;gap:8px;flex:1;min-width:180px">
-          ${gmailConnected ? `
-            <button class="btn-primary" id="dash-gmail-sync-btn" style="flex:1;padding:8px 16px;font-size:13px;font-weight:600">
-              🔄 Sync Gmail
-            </button>
-          ` : `
-            <button class="btn-primary" id="dash-gmail-connect-btn" style="flex:1;padding:8px 16px;font-size:13px;font-weight:600">
-              📧 Connect Gmail
-            </button>
-          `}
-        </div>
-      </div>
-
-      <!-- Sync Status & Results -->
-      ${gmailLastSync ? `
-        <div style="font-size:11.5px;color:var(--text3);margin-top:12px">
-          Last synced: ${new Date(gmailLastSync * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-        </div>
-      ` : ''}
-
-      ${state.gmailSyncResult ? `
-        <div style="margin-top:12px">
-          ${state.gmailSyncResult.error ? `
-            <div class="sync-result sync-result-error" style="font-size:12px;padding:10px 12px;border-radius:var(--radius-sm)">
-              ⚠️ ${state.gmailSyncResult.error}
-            </div>
-          ` : `
-            <div class="sync-result sync-result-ok" style="font-size:12px;padding:10px 12px;border-radius:var(--radius-sm)">
-              ✅ Checked ${state.gmailSyncResult.checked} emails · <strong>${state.gmailSyncResult.imported}</strong> imported
-              ${state.gmailSyncResult.rows?.length ? `
-                <div class="gmail-result-list" style="max-height:160px;overflow-y:auto;margin-top:8px">
-                  ${state.gmailSyncResult.rows.slice(0, 10).map(r => {
-                    const icons = { new: '🟢', duplicate: '⚪', skipped: '🟡' };
-                    const labels = { new: 'New', duplicate: 'Imported', skipped: 'Skipped' };
-                    return `
-                      <div class="gmail-result-row gmail-result-${r.status}" style="font-size:11.5px;padding:4px 0">
-                        <span class="gmail-result-icon">${icons[r.status] || '•'}</span>
-                        <span class="gmail-result-date" style="font-size:11px">${r.date}</span>
-                        <span class="merchant-name" style="font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.merchant || r.subject}</span>
-                        <span class="gmail-result-amount" style="font-weight:600">${r.amount ? '₹' + r.amount : ''}</span>
-                        <span class="gmail-result-label" style="font-size:10.5px">${labels[r.status] || r.status}</span>
-                      </div>
-                    `;
-                  }).join('')}
-                  ${state.gmailSyncResult.rows.length > 10 ? `
-                    <div style="font-size:11px;color:var(--text3);text-align:center;padding-top:4px">
-                      +${state.gmailSyncResult.rows.length - 10} more emails evaluated
-                    </div>
-                  ` : ''}
-                </div>
-              ` : ''}
-            </div>
-          `}
-        </div>
-      ` : ''}
     </div>
   </div>
 </div>
@@ -2296,8 +2255,10 @@ async function mountDashboard() {
 
   // Category breakdown click -> view transactions in category
   document.getElementById('dash-view-all-txns-link')?.addEventListener('click', () => setView('transactions'));
+  document.getElementById('dash-view-budgets-link')?.addEventListener('click', () => setView('budgets'));
+
   document.querySelectorAll('.cat-breakdown-row').forEach(el => {
-    el.addEventListener('click', async () => {
+    const handleCategoryClick = async () => {
       const catId = el.dataset.cat;
       const cat = getCat(catId);
       const catExps = expenses.filter(e => e.category === catId).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
@@ -2319,42 +2280,19 @@ async function mountDashboard() {
         </div>
       `;
       openModal('cat-modal');
+    };
+
+    el.addEventListener('click', handleCategoryClick);
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleCategoryClick();
+      }
     });
   });
 
   document.getElementById('cat-modal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal('cat-modal');
-  });
-
-  // Dashboard Gmail Sync Handlers
-  document.getElementById('dash-gmail-sync-btn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('dash-gmail-sync-btn');
-    if (btn) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
-    try {
-      await gmailSyncClick();
-    } finally {
-      if (btn) { btn.textContent = '🔄 Sync Gmail'; btn.disabled = false; }
-    }
-  });
-
-  document.getElementById('dash-gmail-connect-btn')?.addEventListener('click', () => {
-    gmailConnectClick();
-  });
-
-  document.getElementById('dash-gmail-disconnect-btn')?.addEventListener('click', async () => {
-    await db.setSetting('gmail_token', null);
-    await db.setSetting('gmail_token_expiry', 0);
-    await db.setSetting('gmail_hint', null);
-    showToast('Gmail disconnected');
-    renderView();
-  });
-
-  document.getElementById('dash-gmail-start-date')?.addEventListener('change', async e => {
-    const val = e.target.value;
-    if (val) {
-      await db.setSetting('gmail_start_date', val);
-      showToast('Scan start date saved');
-    }
   });
 }
 
@@ -2387,21 +2325,21 @@ function renderDonutChart(expenses) {
           backgroundColor: entries.map(([id]) => getCat(id).color),
           borderWidth: 2,
           borderColor: isDark ? '#1E191B' : '#ffffff',
-          hoverOffset: 4,
+          hoverOffset: 6,
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '72%',
+        cutout: '74%',
         plugins: {
           legend: { display: false },
           tooltip: {
             backgroundColor: isDark ? 'rgba(30, 25, 27, 0.96)' : 'rgba(255, 255, 255, 0.96)',
             titleColor: isDark ? '#F5EFEA' : '#141112',
             bodyColor: isDark ? '#D8CECA' : '#4A4042',
-            padding: 10,
-            cornerRadius: 8,
+            padding: 12,
+            cornerRadius: 10,
             borderColor: isDark ? 'rgba(223, 196, 152, 0.25)' : 'rgba(217, 155, 132, 0.25)',
             borderWidth: 1,
             callbacks: {

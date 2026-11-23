@@ -296,6 +296,7 @@ export function getCoolingProgress(createdAt, unlockAt) {
 export function isSampleImpulseBuy(item) {
   if (!item) return false;
   const id = String(item.id || '');
+  // Specifically detect mock/demo seed IDs from the initial template
   if (
     id.startsWith('gk-sample-') ||
     id.startsWith('demo-gk-') ||
@@ -303,26 +304,15 @@ export function isSampleImpulseBuy(item) {
   ) {
     return true;
   }
+  // Only detect the exact seeded template mock titles with their exact original demo prices
   const name = String(item.name || '').trim().toLowerCase();
-  const sampleTerms = [
-    'hoodie',
-    'vintage hoodie',
-    'streetwear',
-    'sony wh-1000xm5',
-    'headphones',
-    'flame diffuser',
-    'diffuser',
-    'keychron',
-    'mechanical keyboard'
-  ];
-  if (sampleTerms.some(term => name.includes(term))) {
-    return true;
-  }
   const price = Number(item.price);
-  if ((price === 4499 && name.includes('hoodie')) ||
-      (price === 19990 && name.includes('sony')) ||
-      (price === 2199 && name.includes('diffuser')) ||
-      (price === 16499 && name.includes('keyboard'))) {
+  if (
+    (name === 'limited edition streetwear vintage hoodie' && price === 4499) ||
+    (name === 'sony wh-1000xm5 noise-cancelling headphones' && price === 19990) ||
+    (name === 'ambient warm desk flame diffuser' && price === 2199) ||
+    (name === 'keychron q1 pro custom mechanical keyboard' && price === 16499)
+  ) {
     return true;
   }
   return false;
@@ -330,25 +320,47 @@ export function isSampleImpulseBuy(item) {
 
 // ─── Local Persistence Layer ────────────────────────────────────────────────
 export async function getGatekeeperItems() {
-  let items = [];
+  let idbItems = [];
   if (typeof indexedDB !== 'undefined') {
     try {
-      items = await db.getAll('gatekeeper');
+      const res = await db.getAll('gatekeeper');
+      if (Array.isArray(res)) idbItems = res;
     } catch (err) {
-      console.warn('Could not read gatekeeper store from DB, checking fallback:', err);
+      console.warn('Could not read gatekeeper store from DB:', err);
     }
   }
 
-  if (!items || !items.length) {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const backup = localStorage.getItem('gatekeeper_items');
-        if (backup) items = JSON.parse(backup);
+  let localItems = [];
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const backup = localStorage.getItem('gatekeeper_items');
+      if (backup) {
+        const parsed = JSON.parse(backup);
+        if (Array.isArray(parsed)) localItems = parsed;
       }
-    } catch (_) {}
+    }
+  } catch (_) {}
+
+  // Merge items from both IndexedDB and localStorage by ID so NO record is ever lost
+  const itemMap = new Map();
+  for (const it of localItems) {
+    if (it && it.id) itemMap.set(String(it.id), it);
+  }
+  for (const it of idbItems) {
+    if (it && it.id) {
+      const existing = itemMap.get(String(it.id));
+      if (!existing) {
+        itemMap.set(String(it.id), it);
+      } else {
+        // Keep the one with newer activity timestamp
+        const timeA = new Date(existing.movedToFutureAt || existing.createdAt || 0).getTime();
+        const timeB = new Date(it.movedToFutureAt || it.createdAt || 0).getTime();
+        itemMap.set(String(it.id), timeB >= timeA ? it : existing);
+      }
+    }
   }
 
-  if (!Array.isArray(items)) items = [];
+  let items = Array.from(itemMap.values());
 
   // Strictly filter out any sample/demo impulse buys and delete them permanently
   const sampleItems = items.filter(it => isSampleImpulseBuy(it));
@@ -385,7 +397,13 @@ export async function getGatekeeperItems() {
     }
   }
 
-  if (changed && typeof localStorage !== 'undefined') {
+  // Ensure both stores are completely up-to-date with the full merged collection
+  if (typeof indexedDB !== 'undefined' && idbItems.length < items.length) {
+    for (const it of items) {
+      try { await db.put('gatekeeper', it); } catch (_) {}
+    }
+  }
+  if (typeof localStorage !== 'undefined' && (changed || localItems.length !== items.length)) {
     try { localStorage.setItem('gatekeeper_items', JSON.stringify(items)); } catch (_) {}
   }
 
@@ -393,6 +411,9 @@ export async function getGatekeeperItems() {
 }
 
 export async function saveGatekeeperItem(item) {
+  if (!item || !item.id) return;
+
+  // 1. Direct save into IndexedDB
   if (typeof indexedDB !== 'undefined') {
     try {
       await db.put('gatekeeper', item);
@@ -401,18 +422,33 @@ export async function saveGatekeeperItem(item) {
     }
   }
 
-  // Mirror to localStorage
+  // 2. Direct save into localStorage (read existing items first so no existing item is lost)
   try {
     if (typeof localStorage !== 'undefined') {
-      const items = await getGatekeeperItems();
-      const idx = items.findIndex(i => i.id === item.id);
-      if (idx >= 0) items[idx] = item;
-      else items.unshift(item);
-      localStorage.setItem('gatekeeper_items', JSON.stringify(items));
+      let localItems = [];
+      const backup = localStorage.getItem('gatekeeper_items');
+      if (backup) {
+        try {
+          const parsed = JSON.parse(backup);
+          if (Array.isArray(parsed)) localItems = parsed;
+        } catch (_) {}
+      }
+      const idx = localItems.findIndex(i => String(i.id) === String(item.id));
+      if (idx >= 0) {
+        localItems[idx] = item;
+      } else {
+        localItems.unshift(item);
+      }
+      localStorage.setItem('gatekeeper_items', JSON.stringify(localItems));
     }
   } catch (_) {}
 
-  // Update notification badge counter
+  // 3. Reconcile full collection between stores
+  try {
+    await getGatekeeperItems();
+  } catch (_) {}
+
+  // 4. Update notification badge counter
   updateGatekeeperBadge();
   try {
     if (_ctx && typeof _ctx.gistSync === 'function') _ctx.gistSync();
@@ -420,6 +456,8 @@ export async function saveGatekeeperItem(item) {
 }
 
 export async function deleteGatekeeperItem(id) {
+  if (!id) return;
+
   if (typeof indexedDB !== 'undefined') {
     try {
       await db.delete('gatekeeper', id);
@@ -432,7 +470,7 @@ export async function deleteGatekeeperItem(id) {
     if (typeof localStorage !== 'undefined') {
       const backup = localStorage.getItem('gatekeeper_items');
       if (backup) {
-        const items = JSON.parse(backup).filter(i => i.id !== id);
+        const items = JSON.parse(backup).filter(i => String(i.id) !== String(id));
         localStorage.setItem('gatekeeper_items', JSON.stringify(items));
       }
     }
@@ -510,6 +548,16 @@ export async function handleLogImpulse(formData) {
 
   await saveGatekeeperItem(item);
   playAdd();
+
+  // Reset search and ensure active filter tab displays the items
+  _searchQuery = '';
+  if (isFuture && _currentFilter !== 'all' && _currentFilter !== 'future') {
+    _currentFilter = 'all';
+  } else if (!isFuture && _currentFilter !== 'all' && _currentFilter !== 'cooling') {
+    _currentFilter = 'all';
+  }
+  _expandedItemIds.add(item.id);
+
   if (isFuture) {
     ctx.showToast(`📌 Saved "${item.name}" to Future Reference List!`);
   } else {

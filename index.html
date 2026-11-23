@@ -28,7 +28,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=80">
+  <link rel="stylesheet" href="css/app.css?v=81">
 </head>
 <body>
   <div id="app">
@@ -359,13 +359,13 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=80"></script>
+  <script type="module" src="js/app.js?v=81"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=80')
+        navigator.serviceWorker.register('sw.js?v=81')
           .then(r => {
             console.log('SW registered:', r.scope);
             r.update();

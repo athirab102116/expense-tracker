@@ -1,5 +1,5 @@
 const DB_NAME = 'ExpenseTracker';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 class ExpenseDB {
   constructor() { this._db = null; }
@@ -28,7 +28,7 @@ class ExpenseDB {
       const mr = db.createObjectStore('merchant_rules', { keyPath: 'id', autoIncrement: true });
       mr.createIndex('keyword', 'keyword');
     }
-    if (oldVersion < 2) {
+    if (oldVersion < 3) {
       if (!db.objectStoreNames.contains('gatekeeper')) {
         const gk = db.createObjectStore('gatekeeper', { keyPath: 'id' });
         gk.createIndex('status', 'status');

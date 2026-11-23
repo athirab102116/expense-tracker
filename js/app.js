@@ -387,7 +387,7 @@ async function gistSync() {
       const [expenses, categories, budgets, merchantRules, rawGatekeeper] = await Promise.all([
         db.getAll('expenses'), db.getAll('categories'),
         db.getAll('budgets'), db.getAll('merchant_rules'),
-        db.getAll('gatekeeper').catch(() => []),
+        getGatekeeperItems().catch(() => db.getAll('gatekeeper').catch(() => [])),
       ]);
       const gatekeeper = (rawGatekeeper || []).filter(g => !isSampleImpulseBuy(g));
       const learnedMerchants = await db.getSetting('learned_merchants', {});
@@ -483,6 +483,9 @@ async function loadFromGist() {
       await db.clearStore('gatekeeper').catch(() => {});
       const cleanGk = data.gatekeeper.filter(g => !isSampleImpulseBuy(g));
       for (const g of cleanGk) await db.put('gatekeeper', g).catch(() => {});
+      if (typeof localStorage !== 'undefined') {
+        try { localStorage.setItem('gatekeeper_items', JSON.stringify(cleanGk)); } catch (_) {}
+      }
       if (cleanGk.length !== data.gatekeeper.length) {
         setTimeout(() => gistSync(), 600);
       }
@@ -1548,30 +1551,10 @@ async function bootstrap() {
   state.categories = await db.getAll('categories');
   state.merchantRules = await db.getAll('merchant_rules');
 
-  // Remove all unrecorded sample/demo impulse buy items and prevent any external seeding
+  // Reconcile gatekeeper items across storage layers and update badge
   try {
-    const gkItems = await db.getAll('gatekeeper');
-    if (gkItems && gkItems.length > 0) {
-      for (const item of gkItems) {
-        if (isSampleImpulseBuy(item)) {
-          await db.delete('gatekeeper', item.id).catch(() => {});
-        }
-      }
-    }
-    if (typeof localStorage !== 'undefined') {
-      const backup = localStorage.getItem('gatekeeper_items');
-      if (backup) {
-        try {
-          const parsed = JSON.parse(backup);
-          if (Array.isArray(parsed)) {
-            const cleaned = parsed.filter(i => !isSampleImpulseBuy(i));
-            localStorage.setItem('gatekeeper_items', JSON.stringify(cleaned));
-          }
-        } catch (_) {}
-      }
-    }
+    await getGatekeeperItems();
     updateGatekeeperBadge();
-    gistSync();
   } catch (_) {}
 
   // Smart active month selection:
@@ -1671,12 +1654,8 @@ async function clearDemoData() {
 
   // Ensure any sample impulse buys are completely cleaned up
   try {
-    const gkAll = await db.getAll('gatekeeper');
-    for (const g of gkAll) {
-      if (isSampleImpulseBuy(g)) {
-        await db.delete('gatekeeper', g.id).catch(() => {});
-      }
-    }
+    await getGatekeeperItems();
+    updateGatekeeperBadge();
   } catch (_) {}
   updateGatekeeperBadge();
 

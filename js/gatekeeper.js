@@ -289,6 +289,42 @@ export function getCoolingProgress(createdAt, unlockAt) {
   return { pct, remaining, isReady, formatted };
 }
 
+// ─── Sample Impulse Buy Detector ─────────────────────────────────────────────
+export function isSampleImpulseBuy(item) {
+  if (!item) return false;
+  const id = String(item.id || '');
+  if (
+    id.startsWith('gk-sample-') ||
+    id.startsWith('demo-gk-') ||
+    ['gk-sample-1', 'gk-sample-2', 'gk-sample-3', 'gk-sample-4', 'demo-gk-1', 'demo-gk-2', 'demo-gk-3', 'demo-gk-4'].includes(id)
+  ) {
+    return true;
+  }
+  const name = String(item.name || '').trim().toLowerCase();
+  const sampleTerms = [
+    'hoodie',
+    'vintage hoodie',
+    'streetwear',
+    'sony wh-1000xm5',
+    'headphones',
+    'flame diffuser',
+    'diffuser',
+    'keychron',
+    'mechanical keyboard'
+  ];
+  if (sampleTerms.some(term => name.includes(term))) {
+    return true;
+  }
+  const price = Number(item.price);
+  if ((price === 4499 && name.includes('hoodie')) ||
+      (price === 19990 && name.includes('sony')) ||
+      (price === 2199 && name.includes('diffuser')) ||
+      (price === 16499 && name.includes('keyboard'))) {
+    return true;
+  }
+  return false;
+}
+
 // ─── Local Persistence Layer ────────────────────────────────────────────────
 export async function getGatekeeperItems() {
   let items = [];
@@ -312,19 +348,9 @@ export async function getGatekeeperItems() {
   if (!Array.isArray(items)) items = [];
 
   // Strictly filter out any sample/demo impulse buys and delete them permanently
-  const sampleItems = items.filter(it =>
-    it && (
-      (typeof it.id === 'string' && (it.id.startsWith('gk-sample-') || it.id.startsWith('demo-gk-'))) ||
-      ['gk-sample-1','gk-sample-2','gk-sample-3','gk-sample-4','demo-gk-1','demo-gk-2','demo-gk-3','demo-gk-4'].includes(it.id)
-    )
-  );
+  const sampleItems = items.filter(it => isSampleImpulseBuy(it));
   if (sampleItems.length > 0) {
-    items = items.filter(it =>
-      it && !(
-        (typeof it.id === 'string' && (it.id.startsWith('gk-sample-') || it.id.startsWith('demo-gk-'))) ||
-        ['gk-sample-1','gk-sample-2','gk-sample-3','gk-sample-4','demo-gk-1','demo-gk-2','demo-gk-3','demo-gk-4'].includes(it.id)
-      )
-    );
+    items = items.filter(it => !isSampleImpulseBuy(it));
     if (typeof indexedDB !== 'undefined') {
       for (const s of sampleItems) {
         try { await db.delete('gatekeeper', s.id); } catch (_) {}
@@ -333,6 +359,11 @@ export async function getGatekeeperItems() {
     if (typeof localStorage !== 'undefined') {
       try { localStorage.setItem('gatekeeper_items', JSON.stringify(items)); } catch (_) {}
     }
+    try {
+      if (_ctx && typeof _ctx.gistSync === 'function') {
+        _ctx.gistSync();
+      }
+    } catch (_) {}
   }
 
   // Check cooling items for unlock transition
@@ -380,6 +411,9 @@ export async function saveGatekeeperItem(item) {
 
   // Update notification badge counter
   updateGatekeeperBadge();
+  try {
+    if (_ctx && typeof _ctx.gistSync === 'function') _ctx.gistSync();
+  } catch (_) {}
 }
 
 export async function deleteGatekeeperItem(id) {
@@ -402,6 +436,27 @@ export async function deleteGatekeeperItem(id) {
   } catch (_) {}
 
   updateGatekeeperBadge();
+  try {
+    if (_ctx && typeof _ctx.gistSync === 'function') _ctx.gistSync();
+  } catch (_) {}
+}
+
+export async function clearAllGatekeeperItems() {
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      await db.clearStore('gatekeeper');
+    } catch (_) {}
+  }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('gatekeeper_items');
+    }
+  } catch (_) {}
+
+  updateGatekeeperBadge();
+  try {
+    if (_ctx && typeof _ctx.gistSync === 'function') _ctx.gistSync();
+  } catch (_) {}
 }
 
 export async function updateGatekeeperBadge() {
@@ -645,6 +700,11 @@ export async function renderGatekeeper() {
         </div>
       </div>
       <div class="gk-header-actions">
+        ${items.length > 0 ? `
+          <button class="btn-secondary gk-clear-all-btn" id="gk-clear-all-btn" style="font-size:12px;padding:6px 12px" title="Clear all impulse items from the queue">
+            🗑️ Clear Queue
+          </button>
+        ` : ''}
         <!-- Secondary Quick-Action Button -->
         <button class="btn-primary gk-log-impulse-btn" id="gk-top-add-btn" title="Log a new impulse item into the cooling queue">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -971,6 +1031,9 @@ function renderItemCard(item, ctx) {
         <button class="btn-ghost-sm gk-action-btn gk-extend-btn" data-id="${item.id}" title="Cool off for another 24 hours">
           ⏳ +24h More
         </button>
+        <button class="btn-ghost-sm gk-action-btn gk-del-btn" data-id="${item.id}" title="Delete impulse item">
+          🗑️
+        </button>
       ` : ''}
 
       ${effectiveStatus === 'future' ? `
@@ -1009,6 +1072,16 @@ export function mountGatekeeper() {
   // Top "+ Log Impulse" Button
   document.getElementById('gk-top-add-btn')?.addEventListener('click', () => {
     openLogImpulseModal();
+  });
+
+  // Top "Clear Queue" Button
+  document.getElementById('gk-clear-all-btn')?.addEventListener('click', async () => {
+    if (confirm('Clear all impulse buy records from the Gatekeeper queue?')) {
+      await clearAllGatekeeperItems();
+      playDelete();
+      ctx.showToast('Gatekeeper queue cleared');
+      ctx.renderView();
+    }
   });
 
   // Empty state button

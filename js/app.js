@@ -7,7 +7,8 @@ import {
   mountGatekeeper,
   openLogImpulseModal,
   updateGatekeeperBadge,
-  getGatekeeperItems
+  getGatekeeperItems,
+  isSampleImpulseBuy
 } from './gatekeeper.js';
 
 let _particlesRAF = null;
@@ -383,11 +384,12 @@ async function gistSync() {
   _syncTimer = setTimeout(async () => {
     const el = document.getElementById('gist-sync-status');
     try {
-      const [expenses, categories, budgets, merchantRules, gatekeeper] = await Promise.all([
+      const [expenses, categories, budgets, merchantRules, rawGatekeeper] = await Promise.all([
         db.getAll('expenses'), db.getAll('categories'),
         db.getAll('budgets'), db.getAll('merchant_rules'),
         db.getAll('gatekeeper').catch(() => []),
       ]);
+      const gatekeeper = (rawGatekeeper || []).filter(g => !isSampleImpulseBuy(g));
       const learnedMerchants = await db.getSetting('learned_merchants', {});
       const pendingMerchants = await db.getSetting('pending_merchants', {});
       const creditCards = await db.getSetting('credit_cards', null);
@@ -479,7 +481,11 @@ async function loadFromGist() {
     }
     if (data.gatekeeper?.length) {
       await db.clearStore('gatekeeper').catch(() => {});
-      for (const g of data.gatekeeper) await db.put('gatekeeper', g).catch(() => {});
+      const cleanGk = data.gatekeeper.filter(g => !isSampleImpulseBuy(g));
+      for (const g of cleanGk) await db.put('gatekeeper', g).catch(() => {});
+      if (cleanGk.length !== data.gatekeeper.length) {
+        setTimeout(() => gistSync(), 600);
+      }
     }
     if (data.learnedMerchants) await db.setSetting('learned_merchants', data.learnedMerchants);
     if (data.pendingMerchants) await db.setSetting('pending_merchants', data.pendingMerchants);
@@ -1545,13 +1551,9 @@ async function bootstrap() {
   // Remove all unrecorded sample/demo impulse buy items and prevent any external seeding
   try {
     const gkItems = await db.getAll('gatekeeper');
-    const sampleIds = ['gk-sample-1', 'gk-sample-2', 'gk-sample-3', 'gk-sample-4', 'demo-gk-1', 'demo-gk-2', 'demo-gk-3', 'demo-gk-4'];
     if (gkItems && gkItems.length > 0) {
       for (const item of gkItems) {
-        if (
-          sampleIds.includes(item.id) ||
-          (typeof item.id === 'string' && (item.id.startsWith('gk-sample-') || item.id.startsWith('demo-gk-')))
-        ) {
+        if (isSampleImpulseBuy(item)) {
           await db.delete('gatekeeper', item.id).catch(() => {});
         }
       }
@@ -1562,16 +1564,14 @@ async function bootstrap() {
         try {
           const parsed = JSON.parse(backup);
           if (Array.isArray(parsed)) {
-            const cleaned = parsed.filter(i =>
-              !sampleIds.includes(i.id) &&
-              !(typeof i.id === 'string' && (i.id.startsWith('gk-sample-') || i.id.startsWith('demo-gk-')))
-            );
+            const cleaned = parsed.filter(i => !isSampleImpulseBuy(i));
             localStorage.setItem('gatekeeper_items', JSON.stringify(cleaned));
           }
         } catch (_) {}
       }
     }
     updateGatekeeperBadge();
+    gistSync();
   } catch (_) {}
 
   // Smart active month selection:
@@ -1673,7 +1673,7 @@ async function clearDemoData() {
   try {
     const gkAll = await db.getAll('gatekeeper');
     for (const g of gkAll) {
-      if (typeof g.id === 'string' && (g.id.startsWith('demo-gk-') || g.id.startsWith('gk-sample-'))) {
+      if (isSampleImpulseBuy(g)) {
         await db.delete('gatekeeper', g.id).catch(() => {});
       }
     }

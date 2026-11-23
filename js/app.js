@@ -1405,8 +1405,23 @@ async function gmailDoSync(silent = false) {
     return;
   }
 
-  const btn = document.getElementById('gmail-sync-btn');
-  if (btn && !silent) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
+  const syncBtns = [
+    document.getElementById('gmail-sync-btn'),
+    document.getElementById('dash-gmail-sync-btn'),
+    document.getElementById('header-gmail-sync-btn'),
+    document.getElementById('sidebar-sync-gmail-btn')
+  ].filter(Boolean);
+
+  if (!silent) {
+    syncBtns.forEach(b => {
+      b.disabled = true;
+      if (b.id === 'header-gmail-sync-btn' || b.id === 'sidebar-sync-gmail-btn') {
+        b.style.opacity = '0.6';
+      } else {
+        b.textContent = '⏳ Syncing…';
+      }
+    });
+  }
 
   try {
     // Always scan from start date — never use last-sync as floor
@@ -1524,7 +1539,17 @@ async function gmailDoSync(silent = false) {
     state.gmailSyncResult = { error: err.message };
     if (!silent) showToast('Gmail sync failed: ' + err.message, 'error');
   } finally {
-    if (btn && !silent) { btn.textContent = '🔄 Sync Gmail'; btn.disabled = false; }
+    if (!silent) {
+      syncBtns.forEach(b => {
+        b.disabled = false;
+        b.style.opacity = '';
+        if (b.id === 'header-gmail-sync-btn' || b.id === 'sidebar-sync-gmail-btn') {
+          // Keep structure intact
+        } else {
+          b.textContent = '🔄 Sync Gmail';
+        }
+      });
+    }
   }
 }
 
@@ -1905,6 +1930,14 @@ async function renderDashboard() {
   const monthBudgets = getBudgetsForMonth(allBudgets, month);
   const totalBudgeted = monthBudgets.reduce((s, b) => s + b.amount, 0);
 
+  // Gmail Sync status for Expense Tracker Dashboard
+  const gmailToken = await db.getSetting('gmail_token', null);
+  const gmailExpiry = await db.getSetting('gmail_token_expiry', 0);
+  const gmailConnected = !!(gmailToken && Date.now() < gmailExpiry);
+  const gmailLastSync = await db.getSetting('gmail_last_sync', null);
+  const gmailStartDate = await db.getSetting('gmail_start_date', '2026-10-07');
+  const gmailHint = await db.getSetting('gmail_hint', '');
+
   // Separate Income (Credit), Living Expenses (Debit excluding Savings), and Savings (Debit in Savings category)
   const incomeExpenses = expenses.filter(e => e.type === 'credit');
   const creditIncomeTotal = incomeExpenses.reduce((s, e) => s + e.amount, 0);
@@ -1992,42 +2025,6 @@ async function renderDashboard() {
     `;
   }
 
-  // Recent 5 transactions (sorted by date + time)
-  const recent5 = [...allExpenses].sort((a, b) => {
-    const dComp = (b.date || '').localeCompare(a.date || '');
-    if (dComp !== 0) return dComp;
-    if (b.time && a.time) return b.time.localeCompare(a.time);
-    return (b.createdAt || 0) - (a.createdAt || 0);
-  }).slice(0, 5);
-
-  const recentItemsHTML = recent5.length === 0
-    ? '<div class="empty-state" style="padding:28px 0"><div class="empty-icon">💳</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Tap "+ Add Transaction" or "Load Sample Data" above</div></div>'
-    : recent5.map(e => {
-        const cat = getCat(e.category);
-        const isCredit = e.type === 'credit';
-        const initial = getMerchantInitial(e.merchant || cat.name);
-        const avatarColor = getMerchantColor(e.merchant || cat.name);
-        return `
-          <div class="recent-item txn-row-item" data-id="${e.id}">
-            <div class="merchant-cell">
-              <div class="merchant-avatar" style="background:${avatarColor}">${initial}</div>
-              <div class="merchant-meta">
-                <span class="merchant-title">${e.merchant || cat.name}</span>
-                <span class="merchant-note">
-                  <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:2px 8px">${getCatBadge(cat, 12)} <span>${cat.name}</span></span>
-                  <span class="method-tag" style="font-size:10px;padding:1px 5px">${e.method || 'UPI'}</span>
-                  <span class="recent-time" style="font-size:11px;color:var(--text3)">${e.date}${e.time ? ` · ${e.time}` : ''}</span>
-                  ${e.note ? `<span>· ${e.note}</span>` : ''}
-                </span>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px">
-              <span class="direction-badge direction-${isCredit ? 'credit' : 'debit'}">${isCredit ? 'Credit' : 'Debit'}</span>
-              <span class="amount-cell ${isCredit ? 'credit' : 'debit'}">${isCredit ? '+' : '-'}${fmtCurrency(e.amount, true)}</span>
-            </div>
-          </div>
-        `;
-      }).join('');
 
   let storageBannerMsg = null;
   if (isRunningInSafariInsteadOfPWA()) {
@@ -2162,36 +2159,96 @@ async function renderDashboard() {
       `}
     </div>
 
-    <!-- Cash Flow Bar Chart (Income vs Expense) -->
-    <div class="dashboard-card">
+    <!-- Gmail Auto-Sync Card (Integrated into Expense Tracker) -->
+    <div class="dashboard-card" id="dash-gmail-card">
       <div class="card-header-row">
-        <div>
-          <div class="card-heading">Daily Cash Flow</div>
-          <div class="card-subheading">Income vs Expenses for ${monthLabel(month)}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--brand-light);display:flex;align-items:center;justify-content:center;color:var(--brand);flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="card-heading">Gmail Sync</span>
+              <span class="cc-status-pill ${gmailConnected ? 'positive' : 'neutral'}" style="font-size:11px">
+                ${gmailConnected ? '● Connected' : '○ Not Connected'}
+              </span>
+            </div>
+            <div class="card-subheading">${gmailConnected && gmailHint ? gmailHint : 'Automatic Indian bank email parser'}</div>
+          </div>
         </div>
-        <div class="cashflow-legend">
-          <span class="cf-badge"><span class="cf-dot income"></span> Income</span>
-          <span class="cf-badge"><span class="cf-dot expense"></span> Expense</span>
+        ${gmailConnected ? `
+          <button class="btn-link" id="dash-gmail-disconnect-btn" style="font-size:12px;color:var(--text3)">Disconnect</button>
+        ` : ''}
+      </div>
+
+      <div style="margin-top:14px;font-size:12.5px;color:var(--text2);line-height:1.5">
+        Automatically import alerts from <strong>HDFC, SBI, ICICI, Axis, Kotak, Union Bank, Slice</strong>, and UPI debits &amp; credits. Duplicates are auto-skipped.
+      </div>
+
+      <div style="margin-top:16px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label for="dash-gmail-start-date" style="font-size:11px;color:var(--text3);font-weight:600">Scan from date:</label>
+          <input type="date" id="dash-gmail-start-date" class="field-input" value="${gmailStartDate}" style="max-width:160px;font-size:12px;padding:6px 10px">
+        </div>
+
+        <div style="display:flex;align-items:flex-end;gap:8px;flex:1;min-width:180px">
+          ${gmailConnected ? `
+            <button class="btn-primary" id="dash-gmail-sync-btn" style="flex:1;padding:8px 16px;font-size:13px;font-weight:600">
+              🔄 Sync Gmail
+            </button>
+          ` : `
+            <button class="btn-primary" id="dash-gmail-connect-btn" style="flex:1;padding:8px 16px;font-size:13px;font-weight:600">
+              📧 Connect Gmail
+            </button>
+          `}
         </div>
       </div>
-      <div class="cashflow-chart-wrap">
-        <canvas id="cashFlowChart"></canvas>
-      </div>
-    </div>
-  </div>
 
+      <!-- Sync Status & Results -->
+      ${gmailLastSync ? `
+        <div style="font-size:11.5px;color:var(--text3);margin-top:12px">
+          Last synced: ${new Date(gmailLastSync * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+        </div>
+      ` : ''}
 
-  <!-- Recent Transactions Card -->
-  <div class="dashboard-card" style="margin-top:20px">
-    <div class="card-header-row">
-      <div>
-        <div class="card-heading">Recent Transactions</div>
-        <div class="card-subheading">Latest recorded activity across all accounts</div>
-      </div>
-      <button class="btn-link" id="dash-view-all-txns" style="font-size:12px;font-weight:600">View all →</button>
-    </div>
-    <div class="recent-list">
-      ${recentItemsHTML}
+      ${state.gmailSyncResult ? `
+        <div style="margin-top:12px">
+          ${state.gmailSyncResult.error ? `
+            <div class="sync-result sync-result-error" style="font-size:12px;padding:10px 12px;border-radius:var(--radius-sm)">
+              ⚠️ ${state.gmailSyncResult.error}
+            </div>
+          ` : `
+            <div class="sync-result sync-result-ok" style="font-size:12px;padding:10px 12px;border-radius:var(--radius-sm)">
+              ✅ Checked ${state.gmailSyncResult.checked} emails · <strong>${state.gmailSyncResult.imported}</strong> imported
+              ${state.gmailSyncResult.rows?.length ? `
+                <div class="gmail-result-list" style="max-height:160px;overflow-y:auto;margin-top:8px">
+                  ${state.gmailSyncResult.rows.slice(0, 10).map(r => {
+                    const icons = { new: '🟢', duplicate: '⚪', skipped: '🟡' };
+                    const labels = { new: 'New', duplicate: 'Imported', skipped: 'Skipped' };
+                    return `
+                      <div class="gmail-result-row gmail-result-${r.status}" style="font-size:11.5px;padding:4px 0">
+                        <span class="gmail-result-icon">${icons[r.status] || '•'}</span>
+                        <span class="gmail-result-date" style="font-size:11px">${r.date}</span>
+                        <span class="merchant-name" style="font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.merchant || r.subject}</span>
+                        <span class="gmail-result-amount" style="font-weight:600">${r.amount ? '₹' + r.amount : ''}</span>
+                        <span class="gmail-result-label" style="font-size:10.5px">${labels[r.status] || r.status}</span>
+                      </div>
+                    `;
+                  }).join('')}
+                  ${state.gmailSyncResult.rows.length > 10 ? `
+                    <div style="font-size:11px;color:var(--text3);text-align:center;padding-top:4px">
+                      +${state.gmailSyncResult.rows.length - 10} more emails evaluated
+                    </div>
+                  ` : ''}
+                </div>
+              ` : ''}
+            </div>
+          `}
+        </div>
+      ` : ''}
     </div>
   </div>
 </div>
@@ -2218,7 +2275,6 @@ async function mountDashboard() {
 
   // Render Charts
   renderDonutChart(expenses);
-  renderCashFlowChart(expenses, month);
 
   // Empty state actions
   document.getElementById('btn-empty-add-txn')?.addEventListener('click', () => openAddModal());
@@ -2237,11 +2293,8 @@ async function mountDashboard() {
   });
   document.getElementById('btn-add-this-month')?.addEventListener('click', () => openAddModal());
 
-  // Event handlers
-  document.getElementById('dash-view-all-txns')?.addEventListener('click', () => setView('transactions'));
-  document.getElementById('dash-view-all-txns-link')?.addEventListener('click', () => setView('transactions'));
-
   // Category breakdown click -> view transactions in category
+  document.getElementById('dash-view-all-txns-link')?.addEventListener('click', () => setView('transactions'));
   document.querySelectorAll('.cat-breakdown-row').forEach(el => {
     el.addEventListener('click', async () => {
       const catId = el.dataset.cat;
@@ -2272,15 +2325,36 @@ async function mountDashboard() {
     if (e.target === e.currentTarget) closeModal('cat-modal');
   });
 
-  // Recent transactions click to edit
-  document.querySelectorAll('.recent-item').forEach(el => {
-    el.addEventListener('click', async () => {
-      const id = parseInt(el.dataset.id);
-      const expense = await db.get('expenses', id);
-      if (expense) openAddModal(expense);
-    });
+  // Dashboard Gmail Sync Handlers
+  document.getElementById('dash-gmail-sync-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('dash-gmail-sync-btn');
+    if (btn) { btn.textContent = '⏳ Syncing…'; btn.disabled = true; }
+    try {
+      await gmailSyncClick();
+    } finally {
+      if (btn) { btn.textContent = '🔄 Sync Gmail'; btn.disabled = false; }
+    }
   });
 
+  document.getElementById('dash-gmail-connect-btn')?.addEventListener('click', () => {
+    gmailConnectClick();
+  });
+
+  document.getElementById('dash-gmail-disconnect-btn')?.addEventListener('click', async () => {
+    await db.setSetting('gmail_token', null);
+    await db.setSetting('gmail_token_expiry', 0);
+    await db.setSetting('gmail_hint', null);
+    showToast('Gmail disconnected');
+    renderView();
+  });
+
+  document.getElementById('dash-gmail-start-date')?.addEventListener('change', async e => {
+    const val = e.target.value;
+    if (val) {
+      await db.setSetting('gmail_start_date', val);
+      showToast('Scan start date saved');
+    }
+  });
 }
 
 function renderDonutChart(expenses) {
@@ -5273,6 +5347,18 @@ async function init() {
   document.getElementById('mobile-quick-add')?.addEventListener('click', () => openAddModal());
   document.getElementById('header-import-btn')?.addEventListener('click', () => openImportModal());
   document.getElementById('open-import-sidebar')?.addEventListener('click', () => openImportModal());
+
+  // Gmail Sync quick actions (in Header & Expense Tracker Sidebar)
+  const triggerGmailSyncAction = async () => {
+    const token = await getGmailToken();
+    if (!token) {
+      gmailConnectClick();
+    } else {
+      gmailSyncClick();
+    }
+  };
+  document.getElementById('header-gmail-sync-btn')?.addEventListener('click', triggerGmailSyncAction);
+  document.getElementById('sidebar-sync-gmail-btn')?.addEventListener('click', triggerGmailSyncAction);
 
   // Gatekeeper backdrop click handler
   const gkModal = document.getElementById('gatekeeper-modal');

@@ -28,7 +28,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=81">
+  <link rel="stylesheet" href="css/app.css?v=82">
 </head>
 <body>
   <div id="app">
@@ -105,6 +105,16 @@
             </svg>
           </span>
           <span class="nav-label">Budgets</span>
+        </button>
+
+        <button class="nav-item" id="sidebar-sync-gmail-btn" aria-label="Sync Gmail" data-tooltip="Sync Gmail">
+          <span class="nav-icon-wrap">
+            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+          </span>
+          <span class="nav-label">Sync Gmail</span>
         </button>
 
         <div class="sidebar-divider"></div>
@@ -201,6 +211,13 @@
         </div>
 
         <div class="top-header-right">
+          <button class="btn-header-secondary" id="header-gmail-sync-btn" title="Sync Bank Alerts from Gmail">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+            <span>Sync Gmail</span>
+          </button>
           <button class="btn-header-secondary" id="header-import-btn" title="Import from Bank Emails, Statements, or Excel">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -359,13 +376,13 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=81"></script>
+  <script type="module" src="js/app.js?v=82"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=81')
+        navigator.serviceWorker.register('sw.js?v=82')
           .then(r => {
             console.log('SW registered:', r.scope);
             r.update();

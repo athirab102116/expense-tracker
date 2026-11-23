@@ -1143,13 +1143,13 @@ function renderPreviewItemRow(item, index, ctx) {
       <div class="gk-th-rank gk-cell-rank">
         <div class="gk-rank-badge ${rankClass}">${rankLabel}</div>
         <div class="gk-points-meter">
-          <div class="gk-points-val-box" style="color:${tier.color};background:${tier.badgeBg};border:1px solid ${tier.borderColor}">
+          <div class="gk-points-val-box">
             <strong>${item.utilityScore}</strong><span class="gk-points-den">/100</span>
           </div>
           <div class="gk-points-bar-mini" title="${item.utilityScore} points (${tier.label})">
             <div class="gk-points-fill-mini" style="width:${item.utilityScore}%;background:${tier.color}"></div>
           </div>
-          <span class="gk-tier-tag" style="color:${tier.color}">${tier.shortLabel}</span>
+          <span class="gk-tier-tag">${tier.shortLabel}</span>
         </div>
       </div>
 
@@ -1157,7 +1157,7 @@ function renderPreviewItemRow(item, index, ctx) {
       <div class="gk-th-item gk-cell-item">
         <h4 class="gk-preview-item-title" title="${item.name}">${item.name}</h4>
         <div class="gk-preview-pills-row">
-          <span class="gk-arch-pill-sm" style="color:${archetype.color};background:${archetype.bg};border:1px solid ${archetype.border}">
+          <span class="gk-arch-pill-sm">
             ${archetype.icon} ${archetype.badge}
           </span>
           <span class="gk-budget-pill-sm">
@@ -1213,7 +1213,7 @@ function renderPreviewItemRow(item, index, ctx) {
         <div class="gk-drawer-top-banner">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:13px;font-weight:700;color:var(--text)">All Available Options for "${item.name}"</span>
-            <span class="gk-score-pill" style="color:${tier.color};background:${tier.badgeBg};border-color:${tier.borderColor}">Rank #${index + 1} · ${item.utilityScore}/100 pts</span>
+            <span class="gk-score-pill">Rank #${index + 1} · ${item.utilityScore}/100 pts</span>
           </div>
           <button class="btn-ghost-sm gk-close-drawer-btn" data-id="${item.id}" title="Collapse options">✕ Close</button>
         </div>
@@ -1255,7 +1255,7 @@ function renderItemCard(item, ctx) {
     <div class="gk-card-top">
       <div class="gk-card-badges">
         <!-- Archetype Badge -->
-        <span class="gk-arch-badge" style="color:${archetype.color};background:${archetype.bg};border-color:${archetype.border}">
+        <span class="gk-arch-badge">
           ${archetype.icon} ${archetype.badge}
         </span>
         <!-- Budget Category Badge -->
@@ -1335,7 +1335,7 @@ function renderItemCard(item, ctx) {
     <div class="gk-utility-section">
       <div class="gk-utility-header">
         <span class="gk-utility-title">Diagnostic Utility Score</span>
-        <div class="gk-score-pill" style="color:${tier.color};background:${tier.badgeBg};border-color:${tier.borderColor}">
+        <div class="gk-score-pill">
           <strong>${item.utilityScore}/100</strong> · ${tier.shortLabel}
         </div>
       </div>
@@ -1841,7 +1841,7 @@ export function renderLogImpulseModal(itemToEdit = null) {
               <span class="gk-live-meter-title">Live Diagnostic Utility Score</span>
               <div class="hint-text" style="margin:2px 0 0">Updates in real-time as you answer the diagnostic questions</div>
             </div>
-            <div id="gk-modal-score-badge" class="gk-score-pill" style="color:${initialTier.color};background:${initialTier.badgeBg};border-color:${initialTier.borderColor}">
+            <div id="gk-modal-score-badge" class="gk-score-pill">
               <strong id="gk-modal-score-num">${initialScore}</strong> / 100 · <span id="gk-modal-tier-label">${initialTier.shortLabel}</span>
             </div>
           </div>
@@ -2048,11 +2048,6 @@ export function mountLogImpulseModal() {
 
     if (scoreNumEl) scoreNumEl.textContent = score;
     if (tierLabelEl) tierLabelEl.textContent = tier.shortLabel;
-    if (badgeEl) {
-      badgeEl.style.color = tier.color;
-      badgeEl.style.backgroundColor = tier.badgeBg;
-      badgeEl.style.borderColor = tier.borderColor;
-    }
     if (barEl) {
       barEl.style.width = `${score}%`;
       barEl.style.backgroundColor = tier.color;

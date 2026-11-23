@@ -10,7 +10,7 @@ import {
   updateGatekeeperBadge,
   getGatekeeperItems,
   isSampleImpulseBuy
-} from './gatekeeper.js';
+} from './gatekeeper.js?v=88';
 
 let _particlesRAF = null;
 

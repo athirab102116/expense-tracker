@@ -27,8 +27,13 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 
+  <!-- Cache Control -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=87">
+  <link rel="stylesheet" href="css/app.css?v=88">
 </head>
 <body>
   <div id="app">
@@ -376,13 +381,20 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=87"></script>
+  <script type="module" src="js/app.js?v=88"></script>
 
   <!-- Service Worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=87')
+        navigator.serviceWorker.register('sw.js?v=88')
           .then(r => {
             console.log('SW registered:', r.scope);
             r.update();

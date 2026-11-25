@@ -33,7 +33,7 @@
   <meta http-equiv="Expires" content="0">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="css/app.css?v=88">
+  <link rel="stylesheet" href="css/app.css?v=89">
 </head>
 <body>
   <div id="app">
@@ -124,16 +124,16 @@
 
         <div class="sidebar-divider"></div>
 
-        <!-- Section: Credit Card (Separate Section) -->
-        <div class="sidebar-section-label">Credit Card</div>
-        <button class="nav-item" data-view="cards" aria-label="Credit Cards" data-tooltip="Credit Cards">
+        <!-- Section: Debts (Separate Section) -->
+        <div class="sidebar-section-label">Debts</div>
+        <button class="nav-item" data-view="cards" aria-label="Debts" data-tooltip="Debts">
           <span class="nav-icon-wrap">
             <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="5" width="20" height="14" rx="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
             </svg>
           </span>
-          <span class="nav-label">Credit Card</span>
+          <span class="nav-label">Debts</span>
         </button>
 
         <div class="sidebar-divider"></div>
@@ -287,12 +287,12 @@
         </div>
       </button>
 
-      <button class="mobile-nav-item" data-view="cards" aria-label="Credit Cards Section">
+      <button class="mobile-nav-item" data-view="cards" aria-label="Debts Section">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="5" width="20" height="14" rx="2"></rect>
           <line x1="2" y1="10" x2="22" y2="10"></line>
         </svg>
-        <span>Credit Card</span>
+        <span>Debts</span>
       </button>
 
       <button class="mobile-nav-item" data-view="gatekeeper" aria-label="Gatekeeper Section">
@@ -366,6 +366,22 @@
     </div>
   </div>
 
+  <!-- Friend Debt Modal -->
+  <div class="modal" id="friend-debt-modal">
+    <div class="modal-sheet modal-sheet-md">
+      <div class="modal-handle"></div>
+      <div id="friend-debt-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Friend Repayment Modal -->
+  <div class="modal" id="friend-repay-modal">
+    <div class="modal-sheet modal-sheet-md">
+      <div class="modal-handle"></div>
+      <div id="friend-repay-modal-body"></div>
+    </div>
+  </div>
+
   <!-- Purchase Gatekeeper (Log Impulse) Modal -->
   <div class="modal" id="gatekeeper-modal">
     <div class="modal-sheet modal-sheet-lg">
@@ -381,7 +397,7 @@
   <!-- GSAP 3 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <!-- App Entry -->
-  <script type="module" src="js/app.js?v=88"></script>
+  <script type="module" src="js/app.js?v=89"></script>
 
   <!-- Service Worker registration -->
   <script>
@@ -394,7 +410,7 @@
         }
       });
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=88')
+        navigator.serviceWorker.register('sw.js?v=89')
           .then(r => {
             console.log('SW registered:', r.scope);
             r.update();

@@ -10,7 +10,7 @@ import {
   updateGatekeeperBadge,
   getGatekeeperItems,
   isSampleImpulseBuy
-} from './gatekeeper.js?v=88';
+} from './gatekeeper.js?v=89';
 
 let _particlesRAF = null;
 
@@ -37,6 +37,8 @@ const state = {
   sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
   selectedCreditCard: 'all',
   creditCards: [],
+  debtSection: 'sbi',          // 'sbi' | 'slice' | 'friends'
+  friendDebtFilter: 'all',     // 'all' | 'pending' | 'settled'
   undoItem: null,
   undoTimer: null,
 };
@@ -1738,7 +1740,8 @@ function updateHeaderState() {
       dashboard: 'Dashboard',
       transactions: 'Transactions',
       budgets: 'Budgets',
-      cards: 'Credit Card',
+      cards: 'Debts',
+      debts: 'Debts',
       settings: 'Settings',
       gatekeeper: 'Purchase Gatekeeper'
     };
@@ -1746,8 +1749,8 @@ function updateHeaderState() {
   }
   const appBreadcrumb = document.querySelector('.breadcrumb-app');
   if (appBreadcrumb) {
-    if (state.view === 'cards') {
-      appBreadcrumb.textContent = 'Credit Card';
+    if (state.view === 'cards' || state.view === 'debts') {
+      appBreadcrumb.textContent = 'Debts';
     } else if (state.view === 'gatekeeper') {
       appBreadcrumb.textContent = 'Gatekeeper';
     } else {
@@ -1822,7 +1825,8 @@ async function renderView() {
       case 'add':          main.innerHTML = renderAddForm(); mountAddForm(); break;
       case 'transactions': main.innerHTML = await renderTransactions(); mountTransactions(); break;
       case 'budgets':      main.innerHTML = await renderBudgets(); mountBudgets(); break;
-      case 'cards':        main.innerHTML = await renderCreditCards(); mountCreditCards(); break;
+      case 'cards':
+      case 'debts':        main.innerHTML = await renderDebts(); mountDebts(); break;
       case 'settings':     main.innerHTML = await renderSettings(); mountSettings(); break;
       case 'gatekeeper':   main.innerHTML = await renderGatekeeper(); mountGatekeeper(); break;
     }
@@ -2522,8 +2526,9 @@ function renderAddForm(editData = null) {
     <div id="card-select-group" style="display:${(e.method || 'UPI') === 'Card' ? 'block' : 'none'};margin-bottom:14px">
       <label class="field-label">Charged to Credit Card</label>
       <select id="f-card-id" class="field-input">
-        <option value="sbi" ${(!e.cardId || e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi card') || (e.bank || '').toLowerCase() === 'sbi credit card') ? 'selected' : ''}>SBI Credit Card (Counted in Credit Bill)</option>
-        <option value="other" ${(e.cardId === 'other' || e.cardId === 'none' || (e.bank && !e.bank.toLowerCase().includes('sbi'))) ? 'selected' : ''}>Other Card / Slice (Normal Expense, not in Credit Bill)</option>
+        <option value="sbi" ${(!e.cardId || e.cardId === 'sbi' || (e.bank || '').toLowerCase().includes('sbi card') || (e.bank || '').toLowerCase() === 'sbi credit card') ? 'selected' : ''}>SBI Credit Card (Counted in SBI Bill)</option>
+        <option value="slice" ${(e.cardId === 'slice' || ((e.bank || '').toLowerCase().includes('slice') && !(e.bank || '').toLowerCase().includes('savings') && !(e.bank || '').toLowerCase().includes('account'))) ? 'selected' : ''}>Slice Credit (Counted in Slice Bill)</option>
+        <option value="other" ${(e.cardId === 'other' || e.cardId === 'none') ? 'selected' : ''}>Other Card (Normal Expense)</option>
       </select>
     </div>
 
@@ -2687,11 +2692,14 @@ function mountAddForm(modalMode = false) {
     };
 
     if (selectedMethod === 'Card') {
-      const cid = document.getElementById('f-card-id')?.value || 'all';
+      const cid = document.getElementById('f-card-id')?.value || 'sbi';
       expense.cardId = cid;
       if (cid === 'sbi') {
         expense.cardId = 'sbi';
         expense.bank = 'SBI Credit Card';
+      } else if (cid === 'slice') {
+        expense.cardId = 'slice';
+        expense.bank = 'Slice Credit';
       } else {
         expense.cardId = null;
         expense.bank = 'Other Card';
@@ -3457,9 +3465,10 @@ async function mountBudgets() {
   });
 }
 
-// ─── Credit Cards & Bill Tracking ─────────────────────────────────────────────
+// ─── Debts & Liabilities Tracking (SBI Card, Slice Credit & Friends) ────────
 const DEFAULT_CREDIT_CARDS = [
-  { id: 'sbi', name: 'SBI Credit Card', bank: 'SBI Card', last4: '9103', color: '#1E56A0', billingDay: 18, dueDay: 8 }
+  { id: 'sbi', name: 'SBI Credit Card', bank: 'SBI Card', last4: '9103', color: '#1E56A0', billingDay: 18, dueDay: 8 },
+  { id: 'slice', name: 'Slice Credit', bank: 'Slice Credit', last4: '', color: '#805AD5', billingDay: 1, dueDay: 5 }
 ];
 
 async function getCreditCards() {
@@ -3481,7 +3490,7 @@ async function saveCardPayment(payment) {
   const id = payment.id || `cc-pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   list.push({
     id,
-    cardId: 'sbi',
+    cardId: payment.cardId || 'sbi',
     month: payment.month,
     amount: Number(payment.amount) || 0,
     date: payment.date || today(),
@@ -3525,12 +3534,29 @@ function isCreditCardExpense(e) {
   return false;
 }
 
-function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId = 'sbi') {
-  // Only payments made FROM SBI Credit Card
-  const cardExpenses = allExpenses.filter(e => isCreditCardExpense(e));
+function isSliceCreditExpense(e) {
+  if (!e || e.type === 'credit') return false;
+  const b = (e.bank || '').toLowerCase();
+  const n = (e.note || '').toLowerCase();
+  if (e.cardId === 'slice') return true;
+  if (b.includes('slice credit') || b.includes('slice card') || b.includes('slice borrow')) return true;
+  if (n.includes('slice credit') || n.includes('slice card') || n.includes('slice borrow')) return true;
+  if (b.includes('slice') && !b.includes('savings') && !b.includes('account') && (e.method === 'Card' || e.method === 'Transfer')) return true;
+  return false;
+}
 
-  // Only payments made TO SBI Credit Card
-  const cardPayments = allPayments.filter(p => p.cardId === 'sbi' || p.cardId === 'all' || (p.note && p.note.toLowerCase().includes('sbi')));
+function calculateCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId = 'sbi') {
+  let cardExpenses = [];
+  let cardPayments = [];
+
+  if (targetCardId === 'slice') {
+    cardExpenses = allExpenses.filter(e => isSliceCreditExpense(e));
+    cardPayments = allPayments.filter(p => p.cardId === 'slice' || (p.note && p.note.toLowerCase().includes('slice credit')));
+  } else {
+    // SBI Credit Card (default)
+    cardExpenses = allExpenses.filter(e => isCreditCardExpense(e));
+    cardPayments = allPayments.filter(p => p.cardId === 'sbi' || (!p.cardId && p.note && p.note.toLowerCase().includes('sbi')) || (p.cardId === 'all'));
+  }
 
   const monthSet = new Set();
   cardExpenses.forEach(e => {
@@ -3601,21 +3627,96 @@ function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth
   };
 }
 
-async function renderCreditCards() {
-  const month = state.currentMonth || today().slice(0, 7);
-  const cards = await getCreditCards();
-  const selectedCardId = state.selectedCreditCard || 'all';
-  const currentCard = cards.find(c => c.id === selectedCardId) || cards[0] || { id: 'all', name: 'All Cards', bank: 'All Cards', color: '#D99B84' };
+function calculateCreditCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId = 'sbi') {
+  return calculateCardMonthlySummary(allExpenses, allPayments, targetMonth, targetCardId);
+}
 
-  const allExpenses = await db.getAll('expenses');
-  const allPayments = await getCardPayments();
+// ─── Friend Debts Tracking ──────────────────────────────────────────────────
+async function getFriendDebts() {
+  const list = await db.getSetting('friend_debts', []);
+  return Array.isArray(list) ? list : [];
+}
 
-  const { current: summary, history, sortedMonths } = calculateCreditCardMonthlySummary(allExpenses, allPayments, month, selectedCardId);
+async function saveFriendDebt(debt) {
+  const list = await getFriendDebts();
+  if (debt.id) {
+    const idx = list.findIndex(d => d.id === debt.id);
+    if (idx >= 0) list[idx] = { ...list[idx], ...debt, updatedAt: Date.now() };
+    else list.push(debt);
+  } else {
+    debt.id = `fd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    debt.createdAt = Date.now();
+    debt.repayments = debt.repayments || [];
+    debt.paidAmount = debt.paidAmount || 0;
+    list.push(debt);
+  }
+  await db.setSetting('friend_debts', list);
+  gistSync();
+  return debt;
+}
 
-  // Month navigation labels
-  const [curY, curM] = month.split('-').map(Number);
-  const nextMonthYm = curM === 12 ? `${curY + 1}-01` : `${curY}-${String(curM + 1).padStart(2, '0')}`;
-  const prevMonthYm = curM === 1 ? `${curY - 1}-12` : `${curY}-${String(curM - 1).padStart(2, '0')}`;
+async function deleteFriendDebt(id) {
+  let list = await getFriendDebts();
+  list = list.filter(d => d.id !== id);
+  await db.setSetting('friend_debts', list);
+  gistSync();
+}
+
+async function recordFriendRepayment(debtId, repayment) {
+  const list = await getFriendDebts();
+  const debt = list.find(d => d.id === debtId);
+  if (!debt) return;
+  debt.repayments = debt.repayments || [];
+  const repId = `fdr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const repAmount = Number(repayment.amount) || 0;
+  debt.repayments.push({
+    id: repId,
+    amount: repAmount,
+    date: repayment.date || today(),
+    note: repayment.note || '',
+    createdAt: Date.now()
+  });
+  debt.paidAmount = (Number(debt.paidAmount) || 0) + repAmount;
+  if (debt.paidAmount >= debt.amount) {
+    debt.status = 'settled';
+  } else if (debt.paidAmount > 0) {
+    debt.status = 'partially_paid';
+  } else {
+    debt.status = 'unpaid';
+  }
+  debt.updatedAt = Date.now();
+  await db.setSetting('friend_debts', list);
+  gistSync();
+}
+
+async function settleFriendDebt(debtId) {
+  const list = await getFriendDebts();
+  const debt = list.find(d => d.id === debtId);
+  if (!debt) return;
+  const remainingDue = Math.max(0, (Number(debt.amount) || 0) - (Number(debt.paidAmount) || 0));
+  if (remainingDue <= 0) return;
+
+  if (confirm(`Mark remaining ${fmtCurrency(remainingDue, true)} owed to ${debt.friendName} as fully settled?`)) {
+    await recordFriendRepayment(debt.id, {
+      amount: remainingDue,
+      date: today(),
+      note: 'Settled in full'
+    });
+    playAdd();
+    showToast(`Settled debt with ${debt.friendName}!`, 'success');
+    renderView();
+  }
+}
+
+function getFriendAvatarColor(name) {
+  const colors = ['#D99B84', '#805AD5', '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function renderCardSubSection(cardId, cardMeta, summary, history, sortedMonths, month, nextMonthYm, prevMonthYm) {
+  const isSlice = cardId === 'slice';
 
   // Status badge
   let statusBadge = '';
@@ -3629,23 +3730,11 @@ async function renderCreditCards() {
     statusBadge = '<span class="cc-status-pill negative">● Payment Due</span>';
   }
 
-  // Card selector tabs
-  const cardTabsHtml = cards.map(c => {
-    const isAct = c.id === selectedCardId;
-    return `
-      <button class="cc-tab-pill ${isAct ? 'active' : ''}" data-card-id="${c.id}" type="button">
-        <span class="cc-tab-dot" style="background:${c.color || '#D99B84'}"></span>
-        <span class="cc-tab-name">${c.name}</span>
-        ${c.last4 ? `<span class="cc-tab-last4">··${c.last4}</span>` : ''}
-      </button>
-    `;
-  }).join('');
-
   // Payments list HTML
   const paymentsListHtml = summary.payments.length === 0
     ? `
       <div style="padding:24px 16px;text-align:center;color:var(--text3);font-size:13px;background:var(--surface2);border-radius:var(--radius-sm)">
-        No bill repayments recorded for SBI Credit Card in ${monthLabel(month)} yet. Click <strong>"+ Record Payment"</strong> when you pay off your card bill.
+        No bill repayments recorded for ${cardMeta.name} in ${monthLabel(month)} yet. Click <strong>"+ Record ${isSlice ? 'Slice' : ''} Payment"</strong> when you pay off your card bill.
       </div>
     `
     : `
@@ -3655,7 +3744,7 @@ async function renderCreditCards() {
             <div class="cc-pay-left">
               <div class="cc-pay-icon">✓</div>
               <div class="cc-pay-meta">
-                <span class="cc-pay-title">${p.note || 'SBI Credit Card Bill Payment'}</span>
+                <span class="cc-pay-title">${p.note || `${cardMeta.name} Bill Payment`}</span>
                 <span class="cc-pay-date">${p.date} · Credited towards ${monthLabel(month)} bill</span>
               </div>
             </div>
@@ -3668,14 +3757,14 @@ async function renderCreditCards() {
       </div>
     `;
 
-  // Card transactions list HTML
+  // Transactions list HTML
   const sortedExpenses = [...summary.expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const expensesListHtml = sortedExpenses.length === 0
     ? `
       <div class="empty-state" style="padding:32px 0">
-        <div class="empty-icon">💳</div>
-        <div class="empty-title">No SBI Card transactions in ${monthLabel(month)}</div>
-        <div class="empty-sub">Only charges made from your SBI Credit Card or parsed from SBI Card emails appear here.</div>
+        <div class="empty-icon">${isSlice ? '⚡' : '💳'}</div>
+        <div class="empty-title">No ${cardMeta.name} transactions in ${monthLabel(month)}</div>
+        <div class="empty-sub">Only charges made from your ${cardMeta.name} or parsed from ${cardMeta.bank} emails appear here.</div>
       </div>
     `
     : `
@@ -3692,7 +3781,7 @@ async function renderCreditCards() {
                   <span class="merchant-title">${e.merchant || cat.name}</span>
                   <span class="merchant-note">
                     <span class="cat-pill" style="background:${cat.color}20;color:${cat.color};font-size:11px;padding:2px 8px">${getCatBadge(cat, 12)} <span>${cat.name}</span></span>
-                    <span class="method-tag" style="font-size:10px;padding:1px 5px">SBI Card</span>
+                    <span class="method-tag" style="font-size:10px;padding:1px 5px">${cardMeta.bank}</span>
                     <span class="recent-time" style="font-size:11px;color:var(--text3)">${e.date}${e.time ? ` · ${e.time}` : ''}</span>
                     ${e.note ? `<span>· ${e.note}</span>` : ''}
                   </span>
@@ -3707,7 +3796,7 @@ async function renderCreditCards() {
       </div>
     `;
 
-  // Multi-month History Carousel HTML
+  // History Carousel
   const recentHistoryMonths = (sortedMonths.length > 0 ? sortedMonths : [month]).slice(-6);
   const historyCarouselHtml = recentHistoryMonths.map(m => {
     const h = history[m] || { spendings: 0, paid: 0, closingBalance: 0 };
@@ -3726,267 +3815,591 @@ async function renderCreditCards() {
   }).join('');
 
   return `
-<div class="view-cards">
-  <!-- Top Header Row -->
-  <div class="cc-header-row">
-    <div class="cc-title-area">
-      <h2>SBI Credit Card Tracker</h2>
-      <p>Only payments made from and to SBI Credit Card are counted here</p>
-    </div>
-    <div class="cc-header-actions">
-      <button class="btn-primary" id="btn-open-card-pay">✓ Record Payment</button>
-      ${summary.closingBalance > 0 ? `<button class="btn-secondary" id="btn-quick-pay-full" style="color:var(--brand)">⚡ Pay in Full (${fmtCurrency(summary.closingBalance, false)})</button>` : ''}
-      <button class="btn-secondary" id="btn-open-card-spend">+ Add SBI Card Spend</button>
-    </div>
-  </div>
-
-  <!-- Card Selector Pill Tabs -->
-  <div class="cc-tabs-bar">
-    <span class="cc-tab-pill active">
-      <span class="cc-tab-dot" style="background:#1E56A0"></span>
-      <span class="cc-tab-name">SBI Credit Card (Active)</span>
-      <span class="cc-tab-last4">··9103</span>
-    </span>
-  </div>
-
-  <!-- Hero Section: Virtual Luxury Card + 4 KPI Cards -->
-  <div class="cc-hero-grid">
-    <!-- Virtual Credit Card Visual -->
-    <div class="virtual-credit-card" style="border-color:${currentCard.color ? currentCard.color + '44' : 'rgba(223, 196, 152, 0.22)'}">
-      <div class="vcc-top-row">
-        <span class="vcc-bank-badge">${currentCard.bank || 'CREDIT CARD'}</span>
-        ${statusBadge}
-      </div>
-
-      <div class="vcc-chip-row">
-        <div class="vcc-chip"></div>
-        <svg class="vcc-contactless" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8.5 10a4 4 0 0 1 0 5"></path>
-          <path d="M12 7.5a7 7 0 0 1 0 9"></path>
-          <path d="M15.5 5a10 10 0 0 1 0 13"></path>
-        </svg>
-      </div>
-
-      <div class="vcc-number">•••• •••• •••• ${currentCard.last4 || (currentCard.id === 'all' ? 'MULTI' : '8842')}</div>
-
-      <div class="vcc-bottom-row">
-        <div class="vcc-cardholder">
-          <span class="vcc-label">CARD NAME</span>
-          <span class="vcc-name">${currentCard.name}</span>
+    <div class="cc-hero-grid">
+      <!-- Luxury Virtual Credit Card -->
+      <div class="virtual-credit-card ${isSlice ? 'slice-card' : ''}" style="${!isSlice ? `border-color:${cardMeta.color}44` : ''}">
+        <div class="vcc-top-row">
+          <span class="vcc-bank-badge">${cardMeta.bank}</span>
+          ${statusBadge}
         </div>
-        <div class="vcc-cycle-tag">
-          ${monthLabel(month)}
-        </div>
-      </div>
-    </div>
 
-    <!-- 4 KPI Summary Cards -->
-    <div class="cc-kpi-subgrid">
-      <!-- 1. Total Bill Due -->
-      <div class="kpi-card">
-        <div class="kpi-card-header">
-          <span class="kpi-title">Total Bill Due</span>
-          <div class="kpi-icon-wrap" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-              <line x1="2" y1="10" x2="22" y2="10"></line>
-            </svg>
+        <div class="vcc-chip-row">
+          <div class="vcc-chip"></div>
+          <svg class="vcc-contactless" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8.5 10a4 4 0 0 1 0 5"></path>
+            <path d="M12 7.5a7 7 0 0 1 0 9"></path>
+            <path d="M15.5 5a10 10 0 0 1 0 13"></path>
+          </svg>
+        </div>
+
+        <div class="vcc-number">•••• •••• •••• ${cardMeta.last4 || (isSlice ? 'SLICE' : '8842')}</div>
+
+        <div class="vcc-bottom-row">
+          <div class="vcc-cardholder">
+            <span class="vcc-label">CARD NAME</span>
+            <span class="vcc-name">${cardMeta.name}</span>
+          </div>
+          <div class="vcc-cycle-tag">
+            ${monthLabel(month)}
           </div>
         </div>
-        <div class="kpi-val" style="color:${summary.closingBalance > 0 ? 'var(--expense)' : (summary.totalDue > 0 ? 'var(--income)' : 'var(--text)')}">
-          ${fmtCurrency(summary.totalDue, true)}
-        </div>
-        <div class="kpi-footer">
-          <span>Carried: ${fmtCurrency(summary.openingBalance, false)} + Charges: ${fmtCurrency(summary.spendings, false)}</span>
-        </div>
       </div>
 
-      <!-- 2. New Card Spendings -->
-      <div class="kpi-card">
-        <div class="kpi-card-header">
-          <span class="kpi-title">New Spendings</span>
-          <div class="kpi-icon-wrap" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="7" y1="17" x2="17" y2="7"></line>
-              <polyline points="17 7 17 17 7 17"></polyline>
-            </svg>
+      <!-- 4 KPI Cards -->
+      <div class="cc-kpi-subgrid">
+        <!-- 1. Total Bill Due -->
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Total Bill Due</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                <line x1="2" y1="10" x2="22" y2="10"></line>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-val" style="color:${summary.closingBalance > 0 ? 'var(--expense)' : (summary.totalDue > 0 ? 'var(--income)' : 'var(--text)')}">
+            ${fmtCurrency(summary.totalDue, true)}
+          </div>
+          <div class="kpi-footer">
+            <span>Carried: ${fmtCurrency(summary.openingBalance, false)} + Charges: ${fmtCurrency(summary.spendings, false)}</span>
           </div>
         </div>
-        <div class="kpi-val">${fmtCurrency(summary.spendings, true)}</div>
-        <div class="kpi-footer">
-          <span>${summary.expenses.length} transaction${summary.expenses.length !== 1 ? 's' : ''} in ${monthLabel(month).split(' ')[0]}</span>
-        </div>
-      </div>
 
-      <!-- 3. Paid Off -->
-      <div class="kpi-card">
-        <div class="kpi-card-header">
-          <span class="kpi-title">Paid Off</span>
-          <div class="kpi-icon-wrap" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
+        <!-- 2. New Card Spendings -->
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">New Spendings</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="7" y1="17" x2="17" y2="7"></line>
+                <polyline points="17 7 17 17 7 17"></polyline>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-val">${fmtCurrency(summary.spendings, true)}</div>
+          <div class="kpi-footer">
+            <span>${summary.expenses.length} transaction${summary.expenses.length !== 1 ? 's' : ''} in ${monthLabel(month).split(' ')[0]}</span>
           </div>
         </div>
-        <div class="kpi-val" style="color:var(--income)">${fmtCurrency(summary.paid, true)}</div>
-        <div class="cc-progress-wrap">
-          <div class="cc-progress-track">
-            <div class="cc-progress-fill" style="width:${summary.percentPaid}%"></div>
+
+        <!-- 3. Paid Off -->
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Paid Off</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-val" style="color:var(--income)">${fmtCurrency(summary.paid, true)}</div>
+          <div class="cc-progress-wrap">
+            <div class="cc-progress-track">
+              <div class="cc-progress-fill" style="width:${summary.percentPaid}%"></div>
+            </div>
+          </div>
+          <div class="kpi-footer">
+            <span>${summary.percentPaid}% paid (${summary.payments.length} repayment${summary.payments.length !== 1 ? 's' : ''})</span>
           </div>
         </div>
-        <div class="kpi-footer">
-          <span>${summary.percentPaid}% paid (${summary.payments.length} repayment${summary.payments.length !== 1 ? 's' : ''})</span>
-        </div>
-      </div>
 
-      <!-- 4. Carried Over to Next Month -->
-      <div class="kpi-card">
-        <div class="kpi-card-header">
-          <span class="kpi-title">Carried Over to ${monthLabel(nextMonthYm).split(' ')[0]}</span>
-          <div class="kpi-icon-wrap" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
+        <!-- 4. Carried Over to Next Month -->
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Carried Over to ${monthLabel(nextMonthYm).split(' ')[0]}</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-val" style="color:${summary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)'}">
+            ${fmtCurrency(summary.closingBalance, true)}
+          </div>
+          <div class="kpi-footer">
+            <span>${summary.closingBalance === 0 ? 'Zero balance carried forward' : `Unpaid balance rolling to ${monthLabel(nextMonthYm)}`}</span>
           </div>
         </div>
-        <div class="kpi-val" style="color:${summary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)'}">
-          ${fmtCurrency(summary.closingBalance, true)}
+      </div>
+    </div>
+
+    <!-- Statement & Rollover Ledger Card -->
+    <div class="cc-ledger-card">
+      <div class="cc-ledger-title-row">
+        <div class="cc-ledger-heading">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span>${cardMeta.name} Monthly Statement & Rollover Ledger</span>
         </div>
-        <div class="kpi-footer">
-          <span>${summary.closingBalance === 0 ? 'Zero balance carried forward' : `Unpaid balance rolling to ${monthLabel(nextMonthYm)}`}</span>
+        <span style="font-size:12.5px;color:var(--text3)">Cycle: ${monthLabel(month)}</span>
+      </div>
+
+      <div class="cc-ledger-table">
+        <div class="cc-ledger-row">
+          <span><span class="cc-ledger-symbol">+</span> Opening Balance Carried Over from ${monthLabel(prevMonthYm)}</span>
+          <span class="${summary.openingBalance > 0 ? 'cc-amt-amber' : ''}">${fmtCurrency(summary.openingBalance, true)}</span>
+        </div>
+        <div class="cc-ledger-row">
+          <span><span class="cc-ledger-symbol">+</span> New Charges & Debits in ${monthLabel(month)}</span>
+          <span class="${summary.spendings > 0 ? 'cc-amt-red' : ''}">${fmtCurrency(summary.spendings, true)}</span>
+        </div>
+        <div class="cc-ledger-row total-due">
+          <span><span class="cc-ledger-symbol">=</span> <strong>Total Bill Amount Due</strong></span>
+          <strong>${fmtCurrency(summary.totalDue, true)}</strong>
+        </div>
+        <div class="cc-ledger-row">
+          <span><span class="cc-ledger-symbol">-</span> Amount Paid Off / Payments Credited</span>
+          <span class="cc-amt-green">${summary.paid > 0 ? `- ${fmtCurrency(summary.paid, true)}` : '₹0.00'}</span>
+        </div>
+        <div class="cc-ledger-row closing-row">
+          <span><span class="cc-ledger-symbol">=</span> <strong>Outstanding Balance Carried Over to ${monthLabel(nextMonthYm)}</strong></span>
+          <strong style="color:${summary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)'}">
+            ${fmtCurrency(summary.closingBalance, true)}
+          </strong>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Statement & Month-to-Month Carryover Ledger Card -->
-  <div class="cc-ledger-card">
-    <div class="cc-ledger-title-row">
-      <div class="cc-ledger-heading">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-          <polyline points="10 9 9 9 8 9"></polyline>
-        </svg>
-        <span>Monthly Statement & Rollover Ledger</span>
-      </div>
-      <span style="font-size:12.5px;color:var(--text3)">Cycle: ${monthLabel(month)}</span>
-    </div>
-
-    <div class="cc-ledger-table">
-      <div class="cc-ledger-row">
-        <span><span class="cc-ledger-symbol">+</span> Opening Balance Carried Over from ${monthLabel(prevMonthYm)}</span>
-        <span class="${summary.openingBalance > 0 ? 'cc-amt-amber' : ''}">${fmtCurrency(summary.openingBalance, true)}</span>
-      </div>
-      <div class="cc-ledger-row">
-        <span><span class="cc-ledger-symbol">+</span> New Charges & Debits in ${monthLabel(month)}</span>
-        <span class="${summary.spendings > 0 ? 'cc-amt-red' : ''}">${fmtCurrency(summary.spendings, true)}</span>
-      </div>
-      <div class="cc-ledger-row total-due">
-        <span><span class="cc-ledger-symbol">=</span> <strong>Total Bill Amount Due</strong></span>
-        <strong>${fmtCurrency(summary.totalDue, true)}</strong>
-      </div>
-      <div class="cc-ledger-row">
-        <span><span class="cc-ledger-symbol">-</span> Amount Paid Off / Payments Credited</span>
-        <span class="cc-amt-green">${summary.paid > 0 ? `- ${fmtCurrency(summary.paid, true)}` : '₹0.00'}</span>
-      </div>
-      <div class="cc-ledger-row closing-row">
-        <span><span class="cc-ledger-symbol">=</span> <strong>Outstanding Balance Carried Over to ${monthLabel(nextMonthYm)}</strong></span>
-        <strong style="color:${summary.closingBalance > 0 ? 'var(--expense)' : 'var(--income)'}">
-          ${fmtCurrency(summary.closingBalance, true)}
-        </strong>
+      <!-- Status alert -->
+      <div style="padding:14px 16px;border-radius:var(--radius-sm);background:${summary.closingBalance === 0 && summary.totalDue > 0 ? 'var(--income-light)' : (summary.closingBalance > 0 ? 'var(--warning-light)' : 'var(--surface2)')};border:1px solid ${summary.closingBalance === 0 && summary.totalDue > 0 ? 'var(--income-border)' : (summary.closingBalance > 0 ? 'var(--warning-border)' : 'var(--border-subtle)')};display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div style="font-size:13px;color:var(--text);line-height:1.4">
+          ${summary.totalDue === 0 ? `✨ No ${cardMeta.name} charges or unpaid carryover for this month.` : (summary.closingBalance === 0 ? `🎉 <strong>Paid in Full!</strong> Your entire ${cardMeta.name} bill has been settled. ₹0.00 will be carried over to next month.` : `🔔 <strong>${fmtCurrency(summary.closingBalance, true)}</strong> remains outstanding on ${cardMeta.name} and will be carried over into ${monthLabel(nextMonthYm)}'s bill.`)}
+        </div>
+        ${summary.closingBalance > 0 ? `
+          <button class="btn-primary" id="${isSlice ? 'btn-slice-ledger-pay-btn' : 'btn-ledger-pay-btn'}" style="font-size:12px;padding:6px 14px">Pay Balance (${fmtCurrency(summary.closingBalance, false)}) →</button>
+        ` : ''}
       </div>
     </div>
 
-    <!-- Status explanation alert -->
-    <div style="padding:14px 16px;border-radius:var(--radius-sm);background:${summary.closingBalance === 0 && summary.totalDue > 0 ? 'var(--income-light)' : (summary.closingBalance > 0 ? 'var(--warning-light)' : 'var(--surface2)')};border:1px solid ${summary.closingBalance === 0 && summary.totalDue > 0 ? 'var(--income-border)' : (summary.closingBalance > 0 ? 'var(--warning-border)' : 'var(--border-subtle)')};display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div style="font-size:13px;color:var(--text);line-height:1.4">
-        ${summary.totalDue === 0 ? '✨ No card charges or unpaid carryover for this month.' : (summary.closingBalance === 0 ? '🎉 <strong>Paid in Full!</strong> Your entire card bill has been settled. ₹0.00 will be carried over to next month.' : `🔔 <strong>${fmtCurrency(summary.closingBalance, true)}</strong> remains outstanding and will be carried over into ${monthLabel(nextMonthYm)}'s bill.`)}
+    <!-- Recorded Payments Section -->
+    <div class="dashboard-card" style="margin-bottom:24px">
+      <div class="card-header-row">
+        <div>
+          <div class="card-heading">Bill Payments Recorded</div>
+          <div class="card-subheading">Repayments applied against ${cardMeta.name} ${monthLabel(month)} bill</div>
+        </div>
+        <button class="btn-link" id="${isSlice ? 'btn-add-slice-pay-link' : 'btn-add-payment-link'}" style="font-size:12px;font-weight:600">+ Record Payment</button>
       </div>
-      ${summary.closingBalance > 0 ? `
-        <button class="btn-primary" id="btn-ledger-pay-btn" style="font-size:12px;padding:6px 14px">Pay Balance (${fmtCurrency(summary.closingBalance, false)}) →</button>
-      ` : ''}
+      ${paymentsListHtml}
     </div>
-  </div>
 
-  <!-- Recorded Payments Section -->
-  <div class="dashboard-card" style="margin-bottom:24px">
-    <div class="card-header-row">
-      <div>
-        <div class="card-heading">Bill Payments Recorded</div>
-        <div class="card-subheading">Repayments applied against ${monthLabel(month)} bill</div>
+    <!-- Transactions Charged to Card -->
+    <div class="dashboard-card" style="margin-bottom:24px">
+      <div class="card-header-row">
+        <div>
+          <div class="card-heading">${cardMeta.name} Transactions</div>
+          <div class="card-subheading">All charges and debits billed to ${cardMeta.name} in ${monthLabel(month)}</div>
+        </div>
+        <span style="font-size:12px;font-weight:600;color:var(--text3)">Total: ${fmtCurrency(summary.spendings, false)}</span>
       </div>
-      <button class="btn-link" id="btn-add-payment-link" style="font-size:12px;font-weight:600">+ Record Payment</button>
+      ${expensesListHtml}
     </div>
-    ${paymentsListHtml}
-  </div>
 
-  <!-- Transactions Charged to Credit Card -->
-  <div class="dashboard-card" style="margin-bottom:24px">
-    <div class="card-header-row">
-      <div>
-        <div class="card-heading">Card Transactions</div>
-        <div class="card-subheading">All charges and debits billed to this card in ${monthLabel(month)}</div>
+    <!-- Multi-Month Balance Carryover Timeline -->
+    <div class="dashboard-card">
+      <div class="card-header-row">
+        <div>
+          <div class="card-heading">${cardMeta.name} Rollover Timeline</div>
+          <div class="card-subheading">Month-over-month spendings, repayments, and carried balances</div>
+        </div>
       </div>
-      <span style="font-size:12px;font-weight:600;color:var(--text3)">Total: ${fmtCurrency(summary.spendings, false)}</span>
-    </div>
-    ${expensesListHtml}
-  </div>
-
-  <!-- Multi-Month Balance Carryover Timeline -->
-  <div class="dashboard-card">
-    <div class="card-header-row">
-      <div>
-        <div class="card-heading">Balance Rollover Timeline</div>
-        <div class="card-subheading">Month-over-month card spendings, repayments, and carryovers</div>
+      <div class="cc-history-carousel">
+        ${historyCarouselHtml}
       </div>
     </div>
-    <div class="cc-history-carousel">
-      ${historyCarouselHtml}
-    </div>
-  </div>
-</div>
-`;
+  `;
 }
 
-function mountCreditCards() {
-  // Card tab switching
-  document.querySelectorAll('.cc-tab-pill[data-card-id]').forEach(btn => {
+function renderFriendsSubSection(friendDebts) {
+  const filter = state.friendDebtFilter || 'all';
+
+  const totalBorrowed = friendDebts.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+  const totalRepaid = friendDebts.reduce((sum, d) => sum + (Number(d.paidAmount) || 0), 0);
+  const totalOwed = friendDebts.reduce((sum, d) => {
+    const rem = Math.max(0, (Number(d.amount) || 0) - (Number(d.paidAmount) || 0));
+    return sum + (d.status === 'settled' ? 0 : rem);
+  }, 0);
+
+  const pendingDebts = friendDebts.filter(d => d.status !== 'settled' && (Number(d.amount) || 0) > (Number(d.paidAmount) || 0));
+  const settledDebts = friendDebts.filter(d => d.status === 'settled' || (Number(d.paidAmount) || 0) >= (Number(d.amount) || 0));
+
+  let filteredDebts = friendDebts;
+  if (filter === 'pending') filteredDebts = pendingDebts;
+  else if (filter === 'settled') filteredDebts = settledDebts;
+
+  const sortedDebts = [...filteredDebts].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  return `
+    <div class="fd-section">
+      <!-- 4 Friend Debt KPI Summary Cards -->
+      <div class="fd-kpi-subgrid">
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Total Currently Owed</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">👥</div>
+          </div>
+          <div class="kpi-val" style="color:${totalOwed > 0 ? 'var(--expense)' : 'var(--income)'}">
+            ${fmtCurrency(totalOwed, true)}
+          </div>
+          <div class="kpi-footer">
+            <span>${totalOwed > 0 ? `Pending across ${pendingDebts.length} debt${pendingDebts.length !== 1 ? 's' : ''}` : 'Zero outstanding balance'}</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Total Borrowed</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">📥</div>
+          </div>
+          <div class="kpi-val">${fmtCurrency(totalBorrowed, true)}</div>
+          <div class="kpi-footer">
+            <span>Cumulative principal borrowed</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Total Repaid</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">✓</div>
+          </div>
+          <div class="kpi-val" style="color:var(--income)">${fmtCurrency(totalRepaid, true)}</div>
+          <div class="kpi-footer">
+            <span>Paid back to friends</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-card-header">
+            <span class="kpi-title">Active Pending Debts</span>
+            <div class="kpi-icon-wrap" aria-hidden="true">🔔</div>
+          </div>
+          <div class="kpi-val" style="color:${pendingDebts.length > 0 ? 'var(--warning)' : 'var(--income)'}">
+            ${pendingDebts.length}
+          </div>
+          <div class="kpi-footer">
+            <span>${settledDebts.length} debt${settledDebts.length !== 1 ? 's' : ''} settled</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Controls Row -->
+      <div class="fd-filter-bar">
+        <button class="fd-filter-btn ${filter === 'all' ? 'active' : ''}" data-friend-filter="all">All Debts (${friendDebts.length})</button>
+        <button class="fd-filter-btn ${filter === 'pending' ? 'active' : ''}" data-friend-filter="pending">Pending / Unpaid (${pendingDebts.length})</button>
+        <button class="fd-filter-btn ${filter === 'settled' ? 'active' : ''}" data-friend-filter="settled">Settled (${settledDebts.length})</button>
+      </div>
+
+      <!-- Friend Debt Cards Grid -->
+      ${sortedDebts.length === 0 ? `
+        <div class="empty-state" style="padding:48px 16px;background:var(--surface);border-radius:var(--radius-md);border:1px solid var(--border-subtle)">
+          <div class="empty-icon" style="font-size:36px">🤝</div>
+          <div class="empty-title" style="font-size:18px;margin-top:8px">${filter === 'pending' ? 'No pending friend debts!' : (filter === 'settled' ? 'No settled debts yet.' : 'No friend debts logged yet.')}</div>
+          <div class="empty-sub" style="font-size:13px;max-width:440px;margin:6px auto 16px">When a friend pays for you or you borrow money for splits, log it here to track repayments cleanly.</div>
+          <button class="btn-primary" id="btn-empty-add-friend-debt">+ Add Friend Debt</button>
+        </div>
+      ` : `
+        <div class="fd-grid">
+          ${sortedDebts.map(d => {
+            const borrowedAmt = Number(d.amount) || 0;
+            const paidAmt = Number(d.paidAmount) || 0;
+            const remaining = Math.max(0, borrowedAmt - paidAmt);
+            const isSettled = d.status === 'settled' || remaining === 0;
+            const pctPaid = borrowedAmt > 0 ? Math.min(100, Math.round((paidAmt / borrowedAmt) * 100)) : 100;
+            const initial = (d.friendName || 'F').charAt(0).toUpperCase();
+            const avatarColor = getFriendAvatarColor(d.friendName);
+            const isOverdue = d.dueDate && d.dueDate < today() && !isSettled;
+
+            let statusClass = 'unpaid';
+            let statusLabel = '● Unpaid';
+            if (isSettled) {
+              statusClass = 'settled';
+              statusLabel = '✓ Settled';
+            } else if (paidAmt > 0) {
+              statusClass = 'partially_paid';
+              statusLabel = `● Partially Paid (${pctPaid}%)`;
+            }
+
+            return `
+              <div class="fd-card ${isSettled ? 'is-settled' : ''}" data-id="${d.id}">
+                <div class="fd-card-top">
+                  <div class="fd-friend-info">
+                    <div class="fd-avatar" style="border-color:${avatarColor}44;color:${avatarColor}">
+                      ${initial}
+                    </div>
+                    <div class="fd-name-area">
+                      <span class="fd-friend-name">${d.friendName}</span>
+                      <span class="fd-debt-date">Borrowed ${d.date}</span>
+                    </div>
+                  </div>
+                  <span class="fd-status-pill ${statusClass}">${statusLabel}</span>
+                </div>
+
+                <!-- Balance block -->
+                <div class="fd-amount-block">
+                  <div class="fd-owed-wrap">
+                    <span class="fd-owed-lbl">${isSettled ? 'Settled in Full' : 'Outstanding Balance'}</span>
+                    <span class="fd-owed-val ${isSettled ? 'settled-val' : ''}">${isSettled ? '₹0.00' : fmtCurrency(remaining, true)}</span>
+                  </div>
+                  <div class="fd-total-wrap">
+                    <span class="fd-total-lbl">Original Loan</span>
+                    <span class="fd-total-val">${fmtCurrency(borrowedAmt, true)}</span>
+                  </div>
+                </div>
+
+                <!-- Progress bar -->
+                <div class="fd-progress-box">
+                  <div class="fd-progress-labels">
+                    <span>${pctPaid}% repaid</span>
+                    <span>Paid: ${fmtCurrency(paidAmt, false)}</span>
+                  </div>
+                  <div class="fd-progress-track">
+                    <div class="fd-progress-fill" style="width:${pctPaid}%"></div>
+                  </div>
+                </div>
+
+                ${d.note ? `<div class="fd-note-row">📝 ${d.note}</div>` : ''}
+
+                ${d.dueDate ? `
+                  <div class="fd-due-row ${isOverdue ? 'overdue' : ''}">
+                    📅 Due: ${d.dueDate} ${isOverdue ? '(Overdue!)' : ''}
+                  </div>
+                ` : ''}
+
+                <!-- Mini repayment ledger if any -->
+                ${(d.repayments && d.repayments.length > 0) ? `
+                  <div class="fd-repayments-summary">
+                    <span style="font-weight:600;color:var(--text2)">Repayment Log (${d.repayments.length})</span>
+                    ${d.repayments.slice(-3).map(r => `
+                      <div class="fd-rep-row">
+                        <span>${r.date}${r.note ? ` · ${r.note}` : ''}</span>
+                        <span class="fd-rep-amt">- ${fmtCurrency(r.amount, false)}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+
+                <!-- Card Actions -->
+                <div class="fd-actions-row">
+                  <div class="fd-primary-actions">
+                    ${!isSettled ? `
+                      <button class="btn-primary-sm btn-repay-friend" data-id="${d.id}">+ Repay</button>
+                      <button class="btn-ghost-sm btn-settle-friend" data-id="${d.id}" title="Mark as settled in full">⚡ Settle</button>
+                    ` : `
+                      <span style="font-size:12px;color:var(--income);font-weight:600">✓ Fully Settled</span>
+                    `}
+                  </div>
+                  <div class="fd-secondary-actions">
+                    <button class="btn-ghost-sm btn-edit-friend-debt" data-id="${d.id}" title="Edit debt details">✏️</button>
+                    <button class="btn-ghost-sm btn-delete-friend-debt" data-id="${d.id}" title="Delete debt record" style="color:var(--expense)">🗑️</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+async function renderDebts() {
+  const month = state.currentMonth || today().slice(0, 7);
+  state.debtSection = state.debtSection || 'sbi';
+  const allExpenses = await db.getAll('expenses');
+  const allPayments = await getCardPayments();
+  const friendDebts = await getFriendDebts();
+
+  // Month navigation labels
+  const [curY, curM] = month.split('-').map(Number);
+  const nextMonthYm = curM === 12 ? `${curY + 1}-01` : `${curY}-${String(curM + 1).padStart(2, '0')}`;
+  const prevMonthYm = curM === 1 ? `${curY - 1}-12` : `${curY}-${String(curM - 1).padStart(2, '0')}`;
+
+  const sbiMeta = { id: 'sbi', name: 'SBI Credit Card', bank: 'SBI Card', last4: '9103', color: '#1E56A0' };
+  const sliceMeta = { id: 'slice', name: 'Slice Credit', bank: 'Slice Credit', last4: '', color: '#805AD5' };
+
+  const sbiSummary = calculateCardMonthlySummary(allExpenses, allPayments, month, 'sbi');
+  const sliceSummary = calculateCardMonthlySummary(allExpenses, allPayments, month, 'slice');
+
+  const sbiDue = sbiSummary.current.closingBalance;
+  const sliceDue = sliceSummary.current.closingBalance;
+
+  const friendsTotalOwed = friendDebts.reduce((sum, d) => {
+    const rem = Math.max(0, (Number(d.amount) || 0) - (Number(d.paidAmount) || 0));
+    return sum + (d.status === 'settled' ? 0 : rem);
+  }, 0);
+  const activeFriendsCount = friendDebts.filter(d => d.status !== 'settled' && ((Number(d.amount) || 0) > (Number(d.paidAmount) || 0))).length;
+
+  const grandTotalDebt = sbiDue + sliceDue + friendsTotalOwed;
+
+  return `
+  <div class="view-debts">
+    <!-- Top Header Row -->
+    <div class="cc-header-row">
+      <div class="cc-title-area">
+        <h2>Debts &amp; Liabilities</h2>
+        <p>Track credit cards, borrow lines, and money owed to friends</p>
+      </div>
+      <div class="cc-header-actions">
+        ${state.debtSection === 'friends' ? `
+          <button class="btn-primary" id="btn-add-friend-debt">+ Add Friend Debt</button>
+        ` : (state.debtSection === 'slice' ? `
+          <button class="btn-primary" id="btn-open-slice-pay">✓ Record Slice Payment</button>
+          ${sliceDue > 0 ? `<button class="btn-secondary" id="btn-quick-pay-slice-full" style="color:var(--brand)">⚡ Pay Full (${fmtCurrency(sliceDue, false)})</button>` : ''}
+          <button class="btn-secondary" id="btn-open-slice-spend">+ Add Slice Spend</button>
+        ` : `
+          <button class="btn-primary" id="btn-open-card-pay">✓ Record Payment</button>
+          ${sbiDue > 0 ? `<button class="btn-secondary" id="btn-quick-pay-full" style="color:var(--brand)">⚡ Pay Full (${fmtCurrency(sbiDue, false)})</button>` : ''}
+          <button class="btn-secondary" id="btn-open-card-spend">+ Add SBI Card Spend</button>
+        `)}
+      </div>
+    </div>
+
+    <!-- Combined Debts Overview Ribbon -->
+    <div class="debts-hero-summary card">
+      <div class="debts-summary-item main">
+        <span class="debts-sum-lbl">Total Outstanding Debts</span>
+        <span class="debts-sum-val" style="color:${grandTotalDebt > 0 ? 'var(--expense)' : 'var(--income)'}">${fmtCurrency(grandTotalDebt, true)}</span>
+        <span class="debts-sum-sub">Across Credit Cards &amp; Friends</span>
+      </div>
+      <div class="debts-summary-item">
+        <span class="debts-sum-lbl">💳 SBI Credit Card</span>
+        <span class="debts-sum-val" style="color:${sbiDue > 0 ? 'var(--expense)' : 'var(--income)'}">${fmtCurrency(sbiDue, true)}</span>
+        <span class="debts-sum-sub">${sbiDue === 0 ? '✓ Paid in Full' : 'Due for ' + monthLabel(month)}</span>
+      </div>
+      <div class="debts-summary-item">
+        <span class="debts-sum-lbl">⚡ Slice Credit</span>
+        <span class="debts-sum-val" style="color:${sliceDue > 0 ? 'var(--expense)' : 'var(--income)'}">${fmtCurrency(sliceDue, true)}</span>
+        <span class="debts-sum-sub">${sliceDue === 0 ? '✓ Paid in Full' : 'Due for ' + monthLabel(month)}</span>
+      </div>
+      <div class="debts-summary-item">
+        <span class="debts-sum-lbl">👥 Owed to Friends</span>
+        <span class="debts-sum-val" style="color:${friendsTotalOwed > 0 ? 'var(--expense)' : 'var(--income)'}">${fmtCurrency(friendsTotalOwed, true)}</span>
+        <span class="debts-sum-sub">${friendsTotalOwed === 0 ? '✓ All Settled' : `${activeFriendsCount} friend${activeFriendsCount === 1 ? '' : 's'} pending`}</span>
+      </div>
+    </div>
+
+    <!-- 3 Section Navigation Tabs -->
+    <div class="debts-tabs-container">
+      <div class="debts-tabs-bar">
+        <button class="debts-tab-pill ${state.debtSection === 'sbi' ? 'active' : ''}" data-debt-tab="sbi" type="button">
+          <span class="debts-tab-dot" style="background:#1E56A0"></span>
+          <span class="debts-tab-text">SBI Credit Card</span>
+          <span class="debts-tab-badge ${sbiDue > 0 ? 'badge-due' : 'badge-paid'}">${sbiDue > 0 ? fmtCurrency(sbiDue, false) : '✓ Paid'}</span>
+        </button>
+        <button class="debts-tab-pill ${state.debtSection === 'slice' ? 'active' : ''}" data-debt-tab="slice" type="button">
+          <span class="debts-tab-dot" style="background:#805AD5"></span>
+          <span class="debts-tab-text">Slice Credit</span>
+          <span class="debts-tab-badge ${sliceDue > 0 ? 'badge-due' : 'badge-paid'}">${sliceDue > 0 ? fmtCurrency(sliceDue, false) : '✓ Paid'}</span>
+        </button>
+        <button class="debts-tab-pill ${state.debtSection === 'friends' ? 'active' : ''}" data-debt-tab="friends" type="button">
+          <span class="debts-tab-dot" style="background:#D99B84"></span>
+          <span class="debts-tab-text">Owed to Friends</span>
+          <span class="debts-tab-badge ${friendsTotalOwed > 0 ? 'badge-due' : 'badge-paid'}">${friendsTotalOwed > 0 ? fmtCurrency(friendsTotalOwed, false) : '✓ Settled'}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Section Content -->
+    ${state.debtSection === 'slice'
+      ? renderCardSubSection('slice', sliceMeta, sliceSummary.current, sliceSummary.history, sliceSummary.sortedMonths, month, nextMonthYm, prevMonthYm)
+      : (state.debtSection === 'friends'
+        ? renderFriendsSubSection(friendDebts)
+        : renderCardSubSection('sbi', sbiMeta, sbiSummary.current, sbiSummary.history, sbiSummary.sortedMonths, month, nextMonthYm, prevMonthYm)
+      )
+    }
+  </div>
+  `;
+}
+
+function mountDebts() {
+  // Section tab switcher
+  document.querySelectorAll('.debts-tab-pill[data-debt-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
-      state.selectedCreditCard = btn.dataset.cardId;
+      state.debtSection = btn.dataset.debtTab;
       playNav();
       renderView();
     });
   });
 
-  // Add new card pill
-  document.getElementById('btn-add-new-card-pill')?.addEventListener('click', () => {
-    openCardManageModal();
+  // Friend debts actions
+  document.getElementById('btn-add-friend-debt')?.addEventListener('click', () => {
+    openFriendDebtModal();
+  });
+  document.getElementById('btn-empty-add-friend-debt')?.addEventListener('click', () => {
+    openFriendDebtModal();
   });
 
-  // Manage cards button
-  document.getElementById('btn-open-manage-cards')?.addEventListener('click', () => {
-    openCardManageModal();
+  // Friend debt filter buttons
+  document.querySelectorAll('.fd-filter-btn[data-friend-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.friendDebtFilter = btn.dataset.friendFilter;
+      playNav();
+      renderView();
+    });
   });
 
-  // Record payment button
+  // Friend debt card actions
+  document.querySelectorAll('.btn-repay-friend').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const list = await getFriendDebts();
+      const debt = list.find(d => d.id === id);
+      if (debt) openFriendRepaymentModal(debt);
+    });
+  });
+
+  document.querySelectorAll('.btn-settle-friend').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      settleFriendDebt(id);
+    });
+  });
+
+  document.querySelectorAll('.btn-edit-friend-debt').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const list = await getFriendDebts();
+      const debt = list.find(d => d.id === id);
+      if (debt) openFriendDebtModal(debt);
+    });
+  });
+
+  document.querySelectorAll('.btn-delete-friend-debt').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const list = await getFriendDebts();
+      const debt = list.find(d => d.id === id);
+      if (!debt) return;
+      if (confirm(`Delete debt record for ${debt.friendName}?`)) {
+        await deleteFriendDebt(id);
+        playDelete();
+        showToast('Debt record deleted', 'success');
+        renderView();
+      }
+    });
+  });
+
+  // SBI Credit Card Buttons
   document.getElementById('btn-open-card-pay')?.addEventListener('click', () => {
-    openCardPaymentModal();
+    openCardPaymentModal(null, 'sbi');
   });
   document.getElementById('btn-add-payment-link')?.addEventListener('click', () => {
-    openCardPaymentModal();
+    openCardPaymentModal(null, 'sbi');
   });
   document.getElementById('btn-ledger-pay-btn')?.addEventListener('click', () => {
-    openCardPaymentModal();
+    openCardPaymentModal(null, 'sbi');
   });
 
-  // 1-Click Pay in Full button
+  // SBI Pay in Full
   document.getElementById('btn-quick-pay-full')?.addEventListener('click', async () => {
     const allExpenses = await db.getAll('expenses');
     const allPayments = await getCardPayments();
-    const { current: summary } = calculateCreditCardMonthlySummary(allExpenses, allPayments, state.currentMonth, 'sbi');
+    const { current: summary } = calculateCardMonthlySummary(allExpenses, allPayments, state.currentMonth, 'sbi');
     if (summary.closingBalance <= 0) return;
 
     if (confirm(`Mark entire remaining SBI Card bill of ${fmtCurrency(summary.closingBalance, true)} as paid for ${monthLabel(state.currentMonth)}?`)) {
@@ -4003,12 +4416,49 @@ function mountCreditCards() {
     }
   });
 
-  // Add Card Spend button
+  // SBI Add Spend
   document.getElementById('btn-open-card-spend')?.addEventListener('click', () => {
     openAddModal({ method: 'Card', cardId: 'sbi' });
   });
 
-  // Delete payment record
+  // Slice Credit Buttons
+  document.getElementById('btn-open-slice-pay')?.addEventListener('click', () => {
+    openCardPaymentModal(null, 'slice');
+  });
+  document.getElementById('btn-add-slice-pay-link')?.addEventListener('click', () => {
+    openCardPaymentModal(null, 'slice');
+  });
+  document.getElementById('btn-slice-ledger-pay-btn')?.addEventListener('click', () => {
+    openCardPaymentModal(null, 'slice');
+  });
+
+  // Slice Pay in Full
+  document.getElementById('btn-quick-pay-slice-full')?.addEventListener('click', async () => {
+    const allExpenses = await db.getAll('expenses');
+    const allPayments = await getCardPayments();
+    const { current: summary } = calculateCardMonthlySummary(allExpenses, allPayments, state.currentMonth, 'slice');
+    if (summary.closingBalance <= 0) return;
+
+    if (confirm(`Mark entire remaining Slice Credit bill of ${fmtCurrency(summary.closingBalance, true)} as paid for ${monthLabel(state.currentMonth)}?`)) {
+      await saveCardPayment({
+        cardId: 'slice',
+        month: state.currentMonth,
+        amount: summary.closingBalance,
+        date: today(),
+        note: `Full payment for ${monthLabel(state.currentMonth)} Slice Credit bill`
+      });
+      playAdd();
+      showToast(`Recorded full payment of ${fmtCurrency(summary.closingBalance, true)} for Slice Credit!`, 'success');
+      renderView();
+    }
+  });
+
+  // Slice Add Spend
+  document.getElementById('btn-open-slice-spend')?.addEventListener('click', () => {
+    openAddModal({ method: 'Card', cardId: 'slice' });
+  });
+
+  // Delete card payment record
   document.querySelectorAll('.cc-pay-del-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const pid = btn.dataset.payId;
@@ -4023,7 +4473,7 @@ function mountCreditCards() {
   });
 
   // Click transaction to edit
-  document.querySelectorAll('.view-cards .txn-row-item').forEach(el => {
+  document.querySelectorAll('.view-debts .txn-row-item, .view-cards .txn-row-item').forEach(el => {
     el.addEventListener('click', async () => {
       const id = parseInt(el.dataset.id);
       const expense = await db.get('expenses', id);
@@ -4041,18 +4491,19 @@ function mountCreditCards() {
   });
 }
 
-async function openCardPaymentModal(suggestedAmount = null, targetCardId = null) {
+// Backwards compatibility aliases
+async function renderCreditCards() { return renderDebts(); }
+function mountCreditCards() { mountDebts(); }
+
+async function openCardPaymentModal(suggestedAmount = null, targetCardId = 'sbi') {
   const allExpenses = await db.getAll('expenses');
   const allPayments = await getCardPayments();
-  const cardId = targetCardId || state.selectedCreditCard || 'all';
-  const { current: summary } = calculateCreditCardMonthlySummary(allExpenses, allPayments, state.currentMonth, cardId);
+  const cardId = targetCardId || 'sbi';
+  const isSlice = cardId === 'slice';
+  const cardName = isSlice ? 'Slice Credit' : 'SBI Credit Card';
+  const { current: summary } = calculateCardMonthlySummary(allExpenses, allPayments, state.currentMonth, cardId);
 
   const dueAmount = suggestedAmount != null ? suggestedAmount : summary.closingBalance;
-  const cards = await getCreditCards();
-
-  const cardOptions = cards.map(c =>
-    `<option value="${c.id}" ${c.id === cardId ? 'selected' : ''}>${c.name} ${c.last4 ? `(··${c.last4})` : ''}</option>`
-  ).join('');
 
   const modalBody = document.getElementById('card-pay-modal-body');
   if (!modalBody) return;
@@ -4060,12 +4511,12 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
   modalBody.innerHTML = `
     <div class="add-header">
       <button class="modal-close-btn" id="close-card-pay-btn" type="button">✕</button>
-      <h2>Record SBI Credit Card Payment</h2>
+      <h2>Record ${cardName} Payment</h2>
     </div>
 
     <form id="card-pay-form" autocomplete="off">
       <div class="card-pay-context-box">
-        <div class="cp-context-label">Outstanding Bill for <strong>SBI Credit Card (${monthLabel(state.currentMonth)})</strong></div>
+        <div class="cp-context-label">Outstanding Bill for <strong>${cardName} (${monthLabel(state.currentMonth)})</strong></div>
         <div class="cp-context-amount">${fmtCurrency(summary.closingBalance, true)}</div>
       </div>
 
@@ -4091,8 +4542,8 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
         </div>
         <div class="form-group">
           <label class="field-label">Credit Card</label>
-          <input type="text" value="SBI Credit Card (··9103)" class="field-input" readonly style="opacity:0.9">
-          <input type="hidden" id="cp-card-select" value="sbi">
+          <input type="text" value="${cardName} ${cardId === 'sbi' ? '(··9103)' : ''}" class="field-input" readonly style="opacity:0.9">
+          <input type="hidden" id="cp-card-select" value="${cardId}">
         </div>
       </div>
 
@@ -4151,19 +4602,20 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
     const note = document.getElementById('cp-note').value.trim();
     const alsoExpense = document.getElementById('cp-record-expense-chk')?.checked;
     const sourceAccount = document.getElementById('cp-source-account')?.value || 'Slice Savings Account';
+    const cId = document.getElementById('cp-card-select')?.value || cardId;
 
     await saveCardPayment({
-      cardId: 'sbi',
+      cardId: cId,
       month: state.currentMonth,
       amount,
       date: paymentDate,
-      note: note || `Bill payment for ${monthLabel(state.currentMonth)}`
+      note: note || `${cardName} Bill Payment for ${monthLabel(state.currentMonth)}`
     });
 
     if (alsoExpense) {
       await db.add('expenses', {
         amount,
-        merchant: 'SBI Credit Card Bill Payment',
+        merchant: `${cardName} Bill Payment`,
         category: 'debt',
         date: paymentDate,
         time: formatTimeIST(Date.now()),
@@ -4178,7 +4630,188 @@ async function openCardPaymentModal(suggestedAmount = null, targetCardId = null)
 
     closeModal('card-pay-modal');
     playAdd();
-    showToast(`Payment of ${fmtCurrency(amount, true)} recorded! Bill updated.`, 'success');
+    showToast(`Payment of ${fmtCurrency(amount, true)} recorded for ${cardName}!`, 'success');
+    renderView();
+  });
+}
+
+async function openFriendDebtModal(existingDebt = null) {
+  const modalBody = document.getElementById('friend-debt-modal-body');
+  if (!modalBody) return;
+  const isEdit = !!existingDebt;
+
+  modalBody.innerHTML = `
+    <div class="add-header">
+      <button class="modal-close-btn" id="close-friend-debt-btn" type="button">✕</button>
+      <h2>${isEdit ? 'Edit Friend Debt' : 'Add Money Owed to Friend'}</h2>
+    </div>
+
+    <form id="friend-debt-form" autocomplete="off">
+      <label class="field-label">Friend / Person's Name *</label>
+      <input type="text" id="fd-name" placeholder="e.g. Rahul, Priya, Arjun, Roommate" value="${existingDebt?.friendName || ''}" class="field-input" required>
+
+      <label class="field-label">Amount Owed *</label>
+      <div class="amount-input-wrap" style="margin-bottom:14px">
+        <span class="currency-sym">₹</span>
+        <input type="number" id="fd-amount" inputmode="decimal" placeholder="0.00" value="${existingDebt?.amount || ''}" required step="0.01" min="0.01" class="amount-input">
+      </div>
+
+      <div class="form-row" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="field-label">Date Borrowed / Incurred</label>
+          <input type="date" id="fd-date" value="${existingDebt?.date || today()}" class="field-input" required>
+        </div>
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="field-label">Due Date (optional)</label>
+          <input type="date" id="fd-due-date" value="${existingDebt?.dueDate || ''}" class="field-input">
+        </div>
+      </div>
+
+      <label class="field-label">Note / Purpose (optional)</label>
+      <input type="text" id="fd-note" placeholder="e.g. Goa trip hotel split, Dinner at Toit, Borrowed for rent" value="${existingDebt?.note || ''}" class="field-input" style="margin-bottom:18px">
+
+      <button type="submit" class="btn-primary" style="width:100%">${isEdit ? 'Save Changes' : '+ Add Debt'}</button>
+    </form>
+  `;
+
+  openModal('friend-debt-modal');
+
+  document.getElementById('close-friend-debt-btn')?.addEventListener('click', () => closeModal('friend-debt-modal'));
+  const modalEl = document.getElementById('friend-debt-modal');
+  modalEl._backdropHandler = e => { if (e.target === modalEl) closeModal('friend-debt-modal'); };
+  modalEl.addEventListener('click', modalEl._backdropHandler);
+
+  document.getElementById('friend-debt-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const friendName = document.getElementById('fd-name').value.trim();
+    const amount = Number(document.getElementById('fd-amount').value) || 0;
+    const date = document.getElementById('fd-date').value || today();
+    const dueDate = document.getElementById('fd-due-date').value || '';
+    const note = document.getElementById('fd-note').value.trim();
+
+    if (!friendName || amount <= 0) {
+      showToast('Please enter a valid friend name and amount', 'error');
+      return;
+    }
+
+    const debtData = {
+      ...(existingDebt || {}),
+      friendName,
+      amount,
+      date,
+      dueDate,
+      note,
+      status: (existingDebt?.paidAmount || 0) >= amount ? 'settled' : ((existingDebt?.paidAmount || 0) > 0 ? 'partially_paid' : 'unpaid')
+    };
+
+    await saveFriendDebt(debtData);
+    playAdd();
+    closeModal('friend-debt-modal');
+    showToast(`${isEdit ? 'Updated' : 'Added'} debt: Owe ₹${fmtCurrency(amount, false)} to ${friendName}`, 'success');
+    renderView();
+  });
+}
+
+async function openFriendRepaymentModal(debt) {
+  const modalBody = document.getElementById('friend-repay-modal-body');
+  if (!modalBody) return;
+  const remainingDue = Math.max(0, (Number(debt.amount) || 0) - (Number(debt.paidAmount) || 0));
+
+  modalBody.innerHTML = `
+    <div class="add-header">
+      <button class="modal-close-btn" id="close-friend-repay-btn" type="button">✕</button>
+      <h2>Record Repayment to ${debt.friendName}</h2>
+    </div>
+
+    <form id="friend-repay-form" autocomplete="off">
+      <div class="card-pay-context-box">
+        <div class="cp-context-label">Remaining Balance Owed to <strong>${debt.friendName}</strong></div>
+        <div class="cp-context-amount">${fmtCurrency(remainingDue, true)}</div>
+      </div>
+
+      <label class="field-label">Amount Repaid</label>
+      <div class="amount-input-wrap">
+        <span class="currency-sym">₹</span>
+        <input type="number" id="fdr-amount" inputmode="decimal" placeholder="0.00" value="${remainingDue > 0 ? remainingDue : ''}" required step="0.01" min="0.01" max="${remainingDue}" class="amount-input">
+      </div>
+
+      <div class="quick-amounts" style="margin-bottom:14px">
+        ${remainingDue > 0 ? `
+          <button type="button" class="quick-amt-chip" id="fdr-chip-full" data-amt="${remainingDue}">Pay Full (₹${fmtCurrency(remainingDue, false)})</button>
+          <button type="button" class="quick-amt-chip" id="fdr-chip-half" data-amt="${Math.round(remainingDue / 2)}">Pay Half (₹${fmtCurrency(Math.round(remainingDue / 2), false)})</button>
+        ` : ''}
+      </div>
+
+      <div class="form-row" style="display:flex;gap:12px;margin-bottom:14px">
+        <div class="form-group" style="flex:1">
+          <label class="field-label">Repayment Date</label>
+          <input type="date" id="fdr-date" value="${today()}" class="field-input" required>
+        </div>
+      </div>
+
+      <label class="field-label">Note / Method (optional)</label>
+      <input type="text" id="fdr-note" placeholder="e.g. Paid via UPI / GPay, Cash returned" class="field-input" style="margin-bottom:14px">
+
+      <label class="form-check-label" style="display:flex;align-items:center;gap:8px;margin:10px 0 16px;cursor:pointer;font-size:13px;color:var(--text2)">
+        <input type="checkbox" id="fdr-record-expense-chk" checked style="accent-color:var(--brand);width:16px;height:16px">
+        <span>Also log as an expense in Expense Tracker under Debt Repayment</span>
+      </label>
+
+      <button type="submit" class="btn-primary" style="width:100%">✓ Save Repayment</button>
+    </form>
+  `;
+
+  openModal('friend-repay-modal');
+
+  document.getElementById('close-friend-repay-btn')?.addEventListener('click', () => closeModal('friend-repay-modal'));
+  const modalEl = document.getElementById('friend-repay-modal');
+  modalEl._backdropHandler = e => { if (e.target === modalEl) closeModal('friend-repay-modal'); };
+  modalEl.addEventListener('click', modalEl._backdropHandler);
+
+  modalBody.querySelectorAll('.quick-amt-chip[data-amt]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const inp = document.getElementById('fdr-amount');
+      if (inp) {
+        inp.value = chip.dataset.amt;
+        inp.focus();
+      }
+    });
+  });
+
+  document.getElementById('friend-repay-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const amount = Number(document.getElementById('fdr-amount').value) || 0;
+    const date = document.getElementById('fdr-date').value || today();
+    const note = document.getElementById('fdr-note').value.trim();
+    const logExpense = document.getElementById('fdr-record-expense-chk')?.checked;
+
+    if (amount <= 0) {
+      showToast('Enter a valid repayment amount', 'error');
+      return;
+    }
+
+    await recordFriendRepayment(debt.id, { amount, date, note });
+
+    if (logExpense) {
+      await db.add('expenses', {
+        amount,
+        category: 'debt',
+        date,
+        time: formatTimeIST(Date.now()),
+        month: dateToMonth(date),
+        note: note ? `Repayment to ${debt.friendName} (${note})` : `Repayment to ${debt.friendName}`,
+        method: 'UPI',
+        merchant: `Repaid to ${debt.friendName}`,
+        bank: 'Slice Savings Account',
+        type: 'debit',
+        createdAt: Date.now()
+      });
+      gistSync();
+    }
+
+    playAdd();
+    closeModal('friend-repay-modal');
+    showToast(`Recorded repayment of ${fmtCurrency(amount, true)} to ${debt.friendName}!`, 'success');
     renderView();
   });
 }

@@ -2492,6 +2492,13 @@ function renderAddForm(editData = null) {
       <button type="button" class="segmented-btn ${currentType === 'credit' ? 'active' : ''}" data-type="credit">Income (Credit)</button>
     </div>
 
+    ${!isEdit ? `
+      <div class="fd-modal-callout" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px;color:var(--text2);border:1px solid var(--border-subtle)">
+        <span>👥 Need to log money owed to a friend?</span>
+        <button type="button" class="btn-ghost-sm" id="btn-jump-friend-debt" style="font-weight:600;color:var(--brand);padding:2px 8px;font-size:11.5px;cursor:pointer">+ Add Friend Debt →</button>
+      </div>
+    ` : ''}
+
     <div class="amount-input-wrap">
       <span class="currency-sym">₹</span>
       <input type="number" id="f-amount" inputmode="decimal" placeholder="0.00" value="${e.amount || ''}" required step="0.01" min="0.01" class="amount-input">
@@ -2748,6 +2755,11 @@ function mountAddForm(modalMode = false) {
         document.getElementById('f-amount').focus();
       }
     }
+  });
+
+  document.getElementById('btn-jump-friend-debt')?.addEventListener('click', () => {
+    closeAddModal();
+    openFriendDebtModal();
   });
 
   setTimeout(() => document.getElementById('f-amount')?.focus(), 100);
@@ -4036,6 +4048,19 @@ function renderFriendsSubSection(friendDebts) {
 
   return `
     <div class="fd-section">
+      <!-- Section Header with Direct Action -->
+      <div class="fd-section-header">
+        <div>
+          <h3 class="fd-section-heading">Owed to Friends &amp; Personal Debts</h3>
+          <p class="fd-section-subheading">Track money you owe to friends, split bills, and personal borrowings</p>
+        </div>
+        <div class="fd-header-btn-wrap">
+          <button class="btn-primary" id="btn-tab-add-friend-debt" type="button">
+            ＋ Add Debt to Friend
+          </button>
+        </div>
+      </div>
+
       <!-- 4 Friend Debt KPI Summary Cards -->
       <div class="fd-kpi-subgrid">
         <div class="kpi-card">
@@ -4087,11 +4112,68 @@ function renderFriendsSubSection(friendDebts) {
         </div>
       </div>
 
-      <!-- Filter Controls Row -->
+      <!-- Dedicated Quick-Add Card to Populate Debt on Your Own -->
+      <div class="fd-quick-add-card">
+        <div class="fd-quick-add-header">
+          <div class="fd-qa-title-wrap">
+            <span class="fd-qa-icon">➕</span>
+            <div>
+              <h4 class="fd-qa-title">Populate New Friend Debt</h4>
+              <p class="fd-qa-subtitle">Log money you owe a friend, roommate, or split bill directly</p>
+            </div>
+          </div>
+        </div>
+
+        <form id="fd-inline-add-form" autocomplete="off" class="fd-qa-form">
+          <div class="fd-qa-grid">
+            <div class="fd-qa-field">
+              <label class="field-label" for="fd-inline-name">Friend's Name <span style="color:var(--expense)">*</span></label>
+              <input type="text" id="fd-inline-name" class="field-input" placeholder="e.g. Rahul, Priya, Alex" required>
+            </div>
+
+            <div class="fd-qa-field">
+              <label class="field-label" for="fd-inline-amount">Amount Owed <span style="color:var(--expense)">*</span></label>
+              <div class="amount-input-wrap">
+                <span class="currency-sym">₹</span>
+                <input type="number" id="fd-inline-amount" class="amount-input" placeholder="0.00" min="0.01" step="0.01" required>
+              </div>
+            </div>
+
+            <div class="fd-qa-field">
+              <label class="field-label" for="fd-inline-date">Date Borrowed</label>
+              <input type="date" id="fd-inline-date" class="field-input" value="${today()}" required>
+            </div>
+
+            <div class="fd-qa-field">
+              <label class="field-label" for="fd-inline-due">Due Date (Optional)</label>
+              <input type="date" id="fd-inline-due" class="field-input">
+            </div>
+
+            <div class="fd-qa-field fd-qa-field-wide">
+              <label class="field-label" for="fd-inline-note">Note / Purpose (Optional)</label>
+              <input type="text" id="fd-inline-note" class="field-input" placeholder="e.g. Goa trip hotel split, Dinner at Toit, Borrowed for tickets">
+            </div>
+          </div>
+
+          <div class="fd-qa-footer">
+            <span class="fd-qa-hint">💡 Entries appear below in real-time. You can record repayments or mark as settled anytime.</span>
+            <button type="submit" class="btn-primary" id="btn-inline-submit-debt">
+              ✓ Save Friend Debt
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Filter Controls & Quick Add Button Row -->
       <div class="fd-filter-bar">
-        <button class="fd-filter-btn ${filter === 'all' ? 'active' : ''}" data-friend-filter="all">All Debts (${friendDebts.length})</button>
-        <button class="fd-filter-btn ${filter === 'pending' ? 'active' : ''}" data-friend-filter="pending">Pending / Unpaid (${pendingDebts.length})</button>
-        <button class="fd-filter-btn ${filter === 'settled' ? 'active' : ''}" data-friend-filter="settled">Settled (${settledDebts.length})</button>
+        <div class="fd-filter-group">
+          <button class="fd-filter-btn ${filter === 'all' ? 'active' : ''}" data-friend-filter="all">All Debts (${friendDebts.length})</button>
+          <button class="fd-filter-btn ${filter === 'pending' ? 'active' : ''}" data-friend-filter="pending">Pending / Unpaid (${pendingDebts.length})</button>
+          <button class="fd-filter-btn ${filter === 'settled' ? 'active' : ''}" data-friend-filter="settled">Settled (${settledDebts.length})</button>
+        </div>
+        <button class="btn-secondary-sm" id="btn-filter-add-friend" type="button" style="display:inline-flex;align-items:center;gap:4px">
+          + Add Debt (Modal)
+        </button>
       </div>
 
       <!-- Friend Debt Cards Grid -->
@@ -4099,7 +4181,7 @@ function renderFriendsSubSection(friendDebts) {
         <div class="empty-state" style="padding:48px 16px;background:var(--surface);border-radius:var(--radius-md);border:1px solid var(--border-subtle)">
           <div class="empty-icon" style="font-size:36px">🤝</div>
           <div class="empty-title" style="font-size:18px;margin-top:8px">${filter === 'pending' ? 'No pending friend debts!' : (filter === 'settled' ? 'No settled debts yet.' : 'No friend debts logged yet.')}</div>
-          <div class="empty-sub" style="font-size:13px;max-width:440px;margin:6px auto 16px">When a friend pays for you or you borrow money for splits, log it here to track repayments cleanly.</div>
+          <div class="empty-sub" style="font-size:13px;max-width:440px;margin:6px auto 16px">Populate your debts owed to friends using the form above or tap "+ Add Friend Debt" below.</div>
           <button class="btn-primary" id="btn-empty-add-friend-debt">+ Add Friend Debt</button>
         </div>
       ` : `
@@ -4326,12 +4408,39 @@ function mountDebts() {
     });
   });
 
-  // Friend debts actions
-  document.getElementById('btn-add-friend-debt')?.addEventListener('click', () => {
-    openFriendDebtModal();
-  });
-  document.getElementById('btn-empty-add-friend-debt')?.addEventListener('click', () => {
-    openFriendDebtModal();
+  // Friend debts actions: modal triggers
+  const openFriendModalHandler = () => openFriendDebtModal();
+  document.getElementById('btn-add-friend-debt')?.addEventListener('click', openFriendModalHandler);
+  document.getElementById('btn-tab-add-friend-debt')?.addEventListener('click', openFriendModalHandler);
+  document.getElementById('btn-filter-add-friend')?.addEventListener('click', openFriendModalHandler);
+  document.getElementById('btn-empty-add-friend-debt')?.addEventListener('click', openFriendModalHandler);
+
+  // Friend debt inline quick-add form submission
+  document.getElementById('fd-inline-add-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const friendName = document.getElementById('fd-inline-name')?.value.trim();
+    const amount = Number(document.getElementById('fd-inline-amount')?.value) || 0;
+    const date = document.getElementById('fd-inline-date')?.value || today();
+    const dueDate = document.getElementById('fd-inline-due')?.value || '';
+    const note = document.getElementById('fd-inline-note')?.value.trim() || '';
+
+    if (!friendName || amount <= 0) {
+      showToast('Please enter a friend name and valid amount', 'error');
+      return;
+    }
+
+    await saveFriendDebt({
+      friendName,
+      amount,
+      date,
+      dueDate,
+      note,
+      status: 'unpaid'
+    });
+
+    playAdd();
+    showToast(`Added debt: Owe ${fmtCurrency(amount, true)} to ${friendName}`, 'success');
+    renderView();
   });
 
   // Friend debt filter buttons
@@ -4678,8 +4787,10 @@ async function openFriendDebtModal(existingDebt = null) {
 
   document.getElementById('close-friend-debt-btn')?.addEventListener('click', () => closeModal('friend-debt-modal'));
   const modalEl = document.getElementById('friend-debt-modal');
+  if (modalEl._backdropHandler) modalEl.removeEventListener('click', modalEl._backdropHandler);
   modalEl._backdropHandler = e => { if (e.target === modalEl) closeModal('friend-debt-modal'); };
   modalEl.addEventListener('click', modalEl._backdropHandler);
+  setTimeout(() => document.getElementById('fd-name')?.focus(), 80);
 
   document.getElementById('friend-debt-form')?.addEventListener('submit', async e => {
     e.preventDefault();
@@ -4707,7 +4818,7 @@ async function openFriendDebtModal(existingDebt = null) {
     await saveFriendDebt(debtData);
     playAdd();
     closeModal('friend-debt-modal');
-    showToast(`${isEdit ? 'Updated' : 'Added'} debt: Owe ₹${fmtCurrency(amount, false)} to ${friendName}`, 'success');
+    showToast(`${isEdit ? 'Updated' : 'Added'} debt: Owe ${fmtCurrency(amount, true)} to ${friendName}`, 'success');
     renderView();
   });
 }
